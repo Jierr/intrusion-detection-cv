@@ -2,8 +2,6 @@
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
-#include <map>
-#include <memory>
 #include <string>
 #include <sstream>
 
@@ -12,6 +10,9 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/videoio/videoio.hpp>
 #include <opencv2/imgcodecs/imgcodecs.hpp>
+
+#include "EMailNotifier.hpp"
+#include "ArgumentParser.hpp"
 
 using namespace std;
 using namespace cv;
@@ -31,92 +32,7 @@ namespace
 
 float getImageBusiness(const cv::Mat& mask);
 
-class EMailNotifier
-{
-public:
-	EMailNotifier(const std::string& from, const std::string& to, const std::string& password);
-	virtual ~EMailNotifier();
-	void alert(std::string subject, std::string body, std::string attachment);
-private:
-	std::string mFrom;
-	std::string mTo;
-	std::string mPassword;
-};
 
-EMailNotifier::EMailNotifier(const std::string& from, const std::string& to, const std::string& password)
-{
-	mFrom = from;
-	mTo = to;
-	mPassword = password;
-	
-}
-
-EMailNotifier::~EMailNotifier()
-{
-
-}
-
-void EMailNotifier::alert(std::string subject, std::string body, std::string attachment)
-{
-	std::stringstream command;
-	auto time = std::chrono::system_clock::now();
-	std::time_t cTime = std::chrono::system_clock::to_time_t(time);
-	command << "echo \"Subject: " << subject
-			<< "\\" << std::endl << std::endl 
-			<< body
-			<< "\" | sendmail -v " << mTo << "&";
-			
-	system(command.str().c_str());
-}
-
-
-class ArgumentParser
-{
-public:
-	struct Argument
-	{	
-		bool exists;
-		std::string name;
-		std::string value;
-	};
-	
-	ArgumentParser() = default;
-	virtual ~ArgumentParser() = default;
-	void parse(int argc, char** argv);
-	void registerArgument(const std::string& parameter, const std::string& value);
-	Argument operator[](std::string name);
-private:
-	std::map<std::string, std::string> mArgument;
-};
-
-void ArgumentParser::parse(int argc, char** argv)
-{
-	for(int arg = 1; arg < argc; ++arg)
-	{
-		std::string name = argv[arg];
-		auto argument = mArgument.find(name);
-		if ((argument != mArgument.end()) && (arg < argc-1))
-		{
-			argument->second = std::string(argv[arg+1]);
-		}
-	}
-}
-
-void ArgumentParser::registerArgument(const std::string& parameter, const std::string& value)
-{
-	mArgument[parameter] = value;
-}
-
-ArgumentParser::Argument ArgumentParser::operator[](std::string name)
-{
-	auto argument = mArgument.find(name);
-	if(argument != mArgument.end())
-	{
-		return {true, argument->first, argument->second};
-	}
-	
-	return {false, "",""};
-}
 
 
 
