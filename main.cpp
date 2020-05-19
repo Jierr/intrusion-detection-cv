@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
+#include <list>
 #include <string>
 #include <sstream>
 
@@ -24,11 +25,10 @@ namespace
 	constexpr int MS_PER_FRAME (1000/FPS);
 	constexpr int VK_ESCAPE{27};
 	constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(10);
-	constexpr float SATURATION_TRIGGER = 0.035f;
+	constexpr float SATURATION_TRIGGER = 0.02f;
 	
 	constexpr char ARG_URL[] = "--url";
 	constexpr char ARG_EMAIL[] = "--email";
-	constexpr char ARG_EPASSWORD[] = "--epassword";
 	constexpr char ARG_STORAGE[] = "--storage";
 }
 
@@ -38,32 +38,31 @@ int main(int argc, char** argv)
 {
 	std::string url;
 	std::string email;
-	std::string password;
 	std::string storage;
 	
+	// parse command line arguments
 	ArgumentParser parser;
 	parser.registerArgument(ARG_URL, "rtsp://user:password@localhost:554/stream");
 	parser.registerArgument(ARG_EMAIL, "my@address.com");
-	parser.registerArgument(ARG_EPASSWORD, "");
 	parser.registerArgument(ARG_STORAGE, ".");
 	parser.parse(argc, argv);
 	
 	auto argUrl = parser[ARG_URL];
 	auto argEmail = parser[ARG_EMAIL];
-	auto argEPassword = parser[ARG_EPASSWORD];
 	auto argStorage = parser[ARG_STORAGE];
 	
 	if (argUrl.exists) url = argUrl.value;
 	if (argEmail.exists) email = argEmail.value;
-	if (argEPassword.exists) password = argEPassword.value;
 	if (argStorage.exists) storage = argStorage.value;
 	
 	std::cerr << ARG_URL << " = " << url << std::endl;
 	std::cerr << ARG_EMAIL << " = " << email << std::endl;
+	std::cerr << ARG_STORAGE << " = " << storage << std::endl;
 	
 	cv::VideoCapture capture;
 	if(url.empty())
 	{
+		// Use default (Webcam)
 		capture.open(0);
 	}
 	else
@@ -79,7 +78,7 @@ int main(int argc, char** argv)
 	std::cerr << "Opened \"" << url << "\"" << std::endl;
 	
 	cv::namedWindow("Surveillance", cv::WINDOW_AUTOSIZE);
-	cv::namedWindow("Foreground1", cv::WINDOW_AUTOSIZE);
+	cv::namedWindow("Foreground", cv::WINDOW_AUTOSIZE);
 	cv::namedWindow("ForegroundSmoothed", cv::WINDOW_AUTOSIZE);
 	
     cv::Ptr<cv::BackgroundSubtractor> backgroundSubtractor = createBackgroundSubtractorMOG2(FPS * 60 * 5, 32, true);
@@ -89,54 +88,80 @@ int main(int argc, char** argv)
 		std::cerr << "Could not create backgound subtractor..." << std::endl;
 		return -1;    
     }
-	cv::Mat frame, frameSmoothed, foregroundMask, foregroundMaskSmoothed;
-	bool running{true};
 	std::chrono::system_clock::time_point trigger = std::chrono::system_clock::now();
 	std::chrono::system_clock::time_point currentTime;
 	
-	EMailNotifier notifier(email, email, password);
+	// Set from, to
+	EMailNotifier notifier(email, email);
+	
+	// Set location for videos & images to be stored.
 	Persistence persistence(storage);
+	bool running{true};
 	while(running) 
-	{
+	{		
+		cv::Mat frame, frameSmoothed, foregroundMask, foregroundMaskSmoothed;
+		
 		if (!capture.read(frame))
 		{
 			std::cerr << "Could not read frame..." << std::endl;
 			continue;
 		}
 		
+		// Create Background from noise reduced image
 		cv::blur(frame, frameSmoothed, cv::Size(3,3));
         backgroundSubtractor->apply(frameSmoothed, foregroundMask);
-        
-		cv::imshow("Foreground1", foregroundMask);
+		cv::imshow("Foreground", foregroundMask);
+		
+		// Reduce Noice on forground mask
         cv::erode(foregroundMask, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
         cv::dilate(foregroundMaskSmoothed, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
-		cv::imshow("Surveillance", frame);
+		cv::imshow("Surveillance", frameSmoothed);
 		cv::imshow("ForegroundSmoothed", foregroundMaskSmoothed);
+		
+		// Evaluate image foreground saturation 
 		float saturation = getImageBusiness(foregroundMaskSmoothed);
+		
 		// check, if movement was detected		
 		currentTime = std::chrono::system_clock::now();
 		if (saturation > SATURATION_TRIGGER && (currentTime > trigger + TRIGGER_DELAY_SECONDS))
 		{
+			// Reset timer for next trigger condition
 			trigger = std::chrono::system_clock::now();
 			std::time_t cTrigger = std::chrono::system_clock::to_time_t(trigger);
 			std::cout << "Possible Intrusion: " << std::ctime(&cTrigger) << std::endl;	
+			char isoTime[255] = {0};			
 			
 			// compose alert message
 			{			
 				std::stringstream compose;
-				compose << "Intrusion detected " << std::ctime(&cTrigger);
+				
+				// Subject, currently colons are erronous during image creation.
+  				strftime(isoTime, sizeof(isoTime),"%F", std::localtime(&cTrigger));	
+				compose << "Intrusion detected " << isoTime;
 				std::string subject = compose.str();
+				
+				// Body
+  				strftime(isoTime, sizeof(isoTime),"%FT%X", std::localtime(&cTrigger));
 				compose.str("");
-				compose << "Possible Intrusion detected with an image saturation of " 
+				compose << "Possible Intrusion detected (" << isoTime << ") with an image saturation of " 
 						<< saturation * 100.0 << "%. "
 						<< "Please see attachment for detected image area.";
 				std::string body = compose.str();
-				persistence.saveJpg(frame, std::string("real-") + std::to_string(trigger.time_since_epoch().count()) + ".jpg");
-				persistence.saveJpg(foregroundMask, std::string("foreground-") + std::to_string(trigger.time_since_epoch().count()) + ".jpg");
-				notifier.alert(subject, body, "");	
+				std::cout << body << std::endl;				
+				
+				// Save triggering images fullfilling saturation condition.
+				std::string jpgReal = std::string(isoTime) + std::string("-real.jpg");
+				std::string jpgForeground = std::string(isoTime) + std::string("-foreground.jpg");
+				persistence.saveJpg(frame, jpgReal);
+				persistence.saveJpg(foregroundMask, jpgForeground);
+				std::list<std::string> attachments{jpgReal, jpgForeground};
+				
+				// Send EMail
+				notifier.alert(subject, body, storage, attachments);	
 			}
 		}
 		
+		// Wait and Evaluate pressed keys.
 		int key = cv::waitKey(MS_PER_FRAME);
 		switch(key)
 		{
@@ -149,6 +174,7 @@ int main(int argc, char** argv)
 		}
 	}
 	
+	// Cleanup
 	capture.release();
 	cv::destroyAllWindows();
 	return 0;

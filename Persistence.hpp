@@ -8,8 +8,8 @@ class Persistence
 {
 public:
 	explicit Persistence(const std::string& location = ".");
-	~Persistence();
-	bool saveJpg(const cv::Mat& frame, std::string name);
+	virtual ~Persistence() = default;
+	bool saveJpg(const cv::Mat& frame, std::string name, unsigned int quality = 75);
 private:
 	std::string mLocation;
 };

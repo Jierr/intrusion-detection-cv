@@ -6,18 +6,13 @@
 Persistence::Persistence(const std::string& location)
 : mLocation(location)
 {
-
 }
 
-Persistence::~Persistence()
-{
-}
-
-bool Persistence::saveJpg(const cv::Mat& frame, std::string name)
+bool Persistence::saveJpg(const cv::Mat& frame, std::string name, unsigned int quality)
 {
     std::vector<int> compression;
     compression.push_back(cv::IMWRITE_JPEG_QUALITY);
-    compression.push_back(100);
+    compression.push_back((quality>100)?100:quality);
     
 	std::string filePath = mLocation + '/' + name;
     try 
