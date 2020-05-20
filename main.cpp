@@ -96,10 +96,11 @@ int main(int argc, char** argv)
 	
 	// Set location for videos & images to be stored.
 	Persistence persistence(storage);
-	bool running{true};
+	bool running{true};	
+	char isoTime[255] = {0};		
+	cv::Mat frame, frameSmoothed, foregroundMask, foregroundMaskSmoothed;
 	while(running) 
 	{		
-		cv::Mat frame, frameSmoothed, foregroundMask, foregroundMaskSmoothed;
 		
 		if (!capture.read(frame))
 		{
@@ -128,8 +129,7 @@ int main(int argc, char** argv)
 			// Reset timer for next trigger condition
 			trigger = std::chrono::system_clock::now();
 			std::time_t cTrigger = std::chrono::system_clock::to_time_t(trigger);
-			std::cout << "Possible Intrusion: " << std::ctime(&cTrigger) << std::endl;	
-			char isoTime[255] = {0};			
+			std::cout << "Possible Intrusion: " << std::ctime(&cTrigger) << std::endl;		
 			
 			// compose alert message
 			{			
