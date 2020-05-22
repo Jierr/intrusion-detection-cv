@@ -6,8 +6,8 @@
 
 #include "EMailNotifier.hpp"
 
-EMailNotifier::EMailNotifier(const std::string& from, const std::string& to)
-: mFrom(from), mTo(to)
+EMailNotifier::EMailNotifier(const std::string& from, const std::string& to, const std::string& sendScriptLocation)
+: mFrom(from), mTo(to), mSend(sendScriptLocation + "/send.sh")
 {
 }
 
@@ -32,7 +32,7 @@ void EMailNotifier::alert(const std::string& subject, const std::string& body, c
 	auto time = std::chrono::system_clock::now();
 	std::time_t cTime = std::chrono::system_clock::to_time_t(time);
 	
-	command << "./send.sh \"" 
+	command << mSend << " \"" 
 			<< mFrom << "\" " 
 			<< "\"" << mTo  << "\" "
 			<< "\"" << subject  << "\" "

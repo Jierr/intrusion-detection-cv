@@ -37,6 +37,7 @@ namespace
 	constexpr char ARG_EMAIL[] = "--email";
 	constexpr char ARG_STORAGE[] = "--storage";
 	constexpr char ARG_VISUAL[] = "--visual";
+	constexpr char ARG_SCRIPTS[] = "--scripts";
 	
 	constexpr unsigned int ISO_TIME_BUFFER_SIZE{255};
 	constexpr unsigned int CAPTURE_ERROR_REINITIALIZE{100};
@@ -44,7 +45,7 @@ namespace
 
 float getImageBusiness(const cv::Mat& mask);
 std::list<std::string> persistImages(Persistence& persistence, std::list<cv::Mat*> images, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime);
-void sendMail(const std::string& email, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime, const float saturation, const Persistence& storage, std::list<std::string> attachmentFiles);
+void sendMail(const std::string& script, const std::string& email, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime, const float saturation, const Persistence& storage, std::list<std::string> attachmentFiles);
 
 
 int main(int argc, char** argv)
@@ -52,6 +53,7 @@ int main(int argc, char** argv)
 	std::string url;
 	std::string email;
 	std::string storage;
+	std::string scripts;
 	bool visual = false;
 	
 	// parse command line arguments
@@ -59,22 +61,26 @@ int main(int argc, char** argv)
 	parser.registerArgument(ARG_URL, "rtsp://user:password@localhost:554/stream");
 	parser.registerArgument(ARG_EMAIL, "my@address.com");
 	parser.registerArgument(ARG_STORAGE, ".");
+	parser.registerArgument(ARG_SCRIPTS, ".");
 	parser.registerArgument(ARG_VISUAL, "False");
 	parser.parse(argc, argv);
 	
 	auto argUrl = parser[ARG_URL];
 	auto argEmail = parser[ARG_EMAIL];
 	auto argStorage = parser[ARG_STORAGE];
+	auto argScripts= parser[ARG_SCRIPTS];
 	auto argVisual= parser[ARG_VISUAL];
 	
 	if (argUrl.exists) url = argUrl.value;
 	if (argEmail.exists) email = argEmail.value;
 	if (argStorage.exists) storage = argStorage.value;
+	if (argScripts.exists) scripts = argScripts.value;
 	if (argVisual.exists && ((argVisual.value == "True") || (argVisual.value == "true"))) visual = true;
 	
-	std::cerr << ARG_URL << " = " << url << std::endl;
-	std::cerr << ARG_EMAIL << " = " << email << std::endl;
-	std::cerr << ARG_STORAGE << " = " << storage << std::endl;
+	std::cout << ARG_URL << " = " << url << std::endl;
+	std::cout << ARG_EMAIL << " = " << email << std::endl;
+	std::cout << ARG_STORAGE << " = " << storage << std::endl;
+	std::cout << ARG_SCRIPTS << " = " << scripts << std::endl;
 	
 	cv::VideoCapture capture;
 	if(url.empty())
@@ -174,7 +180,7 @@ int main(int argc, char** argv)
 			std::list<std::string> persistedImages = persistImages(persistence, imageList, isoTime, cTrigger);
 			
 			//send mail
-			sendMail(email, isoTime, cTrigger, saturation, persistence, persistedImages);
+			sendMail(scripts, email, isoTime, cTrigger, saturation, persistence, persistedImages);
 	
 		}
 		
@@ -236,10 +242,10 @@ std::list<std::string> persistImages(Persistence& persistence, std::list<cv::Mat
 	return persisted;
 }
 
-void sendMail(const std::string& email, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime, const float saturation, const Persistence& storage, std::list<std::string> attachmentFiles)
+void sendMail(const std::string& script, const std::string& email, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime, const float saturation, const Persistence& storage, std::list<std::string> attachmentFiles)
 {	
 	// Set from, to
-	EMailNotifier notifier(email, email);
+	EMailNotifier notifier(email, email, script);
 	std::stringstream compose;	
 
 	// Subject, currently colons are erronous during image creation.
