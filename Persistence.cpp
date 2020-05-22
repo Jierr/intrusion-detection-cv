@@ -26,3 +26,8 @@ bool Persistence::saveJpg(const cv::Mat& frame, std::string name, unsigned int q
  	}
  	return true;
 }
+
+const std::string& Persistence::getLocation() const
+{
+	return mLocation;
+}

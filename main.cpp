@@ -3,6 +3,7 @@
 #include <ctime>
 #include <iostream>
 #include <list>
+#include <memory>
 #include <string>
 #include <sstream>
 
@@ -30,30 +31,40 @@ namespace
 	constexpr char ARG_URL[] = "--url";
 	constexpr char ARG_EMAIL[] = "--email";
 	constexpr char ARG_STORAGE[] = "--storage";
+	constexpr char ARG_VISUAL[] = "--visual";
+	
+	constexpr unsigned int ISO_TIME_BUFFER_SIZE{255};
 }
 
 float getImageBusiness(const cv::Mat& mask);
+std::list<std::string> persistImages(Persistence& persistence, std::list<cv::Mat*> images, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime);
+void sendMail(const std::string& email, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime, const float saturation, const Persistence& storage, std::list<std::string> attachmentFiles);
+
 
 int main(int argc, char** argv)
 {
 	std::string url;
 	std::string email;
 	std::string storage;
+	bool visual = false;
 	
 	// parse command line arguments
 	ArgumentParser parser;
 	parser.registerArgument(ARG_URL, "rtsp://user:password@localhost:554/stream");
 	parser.registerArgument(ARG_EMAIL, "my@address.com");
 	parser.registerArgument(ARG_STORAGE, ".");
+	parser.registerArgument(ARG_VISUAL, "True");
 	parser.parse(argc, argv);
 	
 	auto argUrl = parser[ARG_URL];
 	auto argEmail = parser[ARG_EMAIL];
 	auto argStorage = parser[ARG_STORAGE];
+	auto argVisual= parser[ARG_VISUAL];
 	
 	if (argUrl.exists) url = argUrl.value;
 	if (argEmail.exists) email = argEmail.value;
 	if (argStorage.exists) storage = argStorage.value;
+	if (argVisual.exists && ((argVisual.value == "True") || (argVisual.value == "true"))) visual = true;
 	
 	std::cerr << ARG_URL << " = " << url << std::endl;
 	std::cerr << ARG_EMAIL << " = " << email << std::endl;
@@ -77,9 +88,12 @@ int main(int argc, char** argv)
 	}
 	std::cerr << "Opened \"" << url << "\"" << std::endl;
 	
-	cv::namedWindow("Surveillance", cv::WINDOW_AUTOSIZE);
-	cv::namedWindow("Foreground", cv::WINDOW_AUTOSIZE);
-	cv::namedWindow("ForegroundSmoothed", cv::WINDOW_AUTOSIZE);
+	if(visual)
+	{
+		cv::namedWindow("Surveillance", cv::WINDOW_AUTOSIZE);
+		cv::namedWindow("Foreground", cv::WINDOW_AUTOSIZE);
+		cv::namedWindow("ForegroundSmoothed", cv::WINDOW_AUTOSIZE);	
+	}
 	
     cv::Ptr<cv::BackgroundSubtractor> backgroundSubtractor = createBackgroundSubtractorMOG2(FPS * 60 * 5, 32, true);
     //cv::Ptr<cv::BackgroundSubtractor> backgroundSubtractor = createBackgroundSubtractorKNN(FPS * 60 * 5, 100, true);
@@ -91,13 +105,11 @@ int main(int argc, char** argv)
 	std::chrono::system_clock::time_point trigger = std::chrono::system_clock::now();
 	std::chrono::system_clock::time_point currentTime;
 	
-	// Set from, to
-	EMailNotifier notifier(email, email);
 	
 	// Set location for videos & images to be stored.
 	Persistence persistence(storage);
 	bool running{true};	
-	char isoTime[255] = {0};		
+	char isoTime[ISO_TIME_BUFFER_SIZE] = {0};		
 	cv::Mat frame, frameSmoothed, foregroundMask, foregroundMaskSmoothed;
 	while(running) 
 	{		
@@ -111,13 +123,13 @@ int main(int argc, char** argv)
 		// Create Background from noise reduced image
 		cv::blur(frame, frameSmoothed, cv::Size(3,3));
         backgroundSubtractor->apply(frameSmoothed, foregroundMask);
-		cv::imshow("Foreground", foregroundMask);
+		if (visual) cv::imshow("Foreground", foregroundMask);
 		
 		// Reduce Noice on forground mask
         cv::erode(foregroundMask, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
         cv::dilate(foregroundMaskSmoothed, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
-		cv::imshow("Surveillance", frameSmoothed);
-		cv::imshow("ForegroundSmoothed", foregroundMaskSmoothed);
+		if (visual) cv::imshow("Surveillance", frameSmoothed);
+		if (visual) cv::imshow("ForegroundSmoothed", foregroundMaskSmoothed);
 		
 		// Evaluate image foreground saturation 
 		float saturation = getImageBusiness(foregroundMaskSmoothed);
@@ -129,36 +141,15 @@ int main(int argc, char** argv)
 			// Reset timer for next trigger condition
 			trigger = std::chrono::system_clock::now();
 			std::time_t cTrigger = std::chrono::system_clock::to_time_t(trigger);
-			std::cout << "Possible Intrusion: " << std::ctime(&cTrigger) << std::endl;		
+			std::cout << "Possible Intrusion: " << std::ctime(&cTrigger) << std::endl;								
+				
+			// Save triggering images fullfilling saturation condition.
+			std::list<cv::Mat*> imageList{&frame, &foregroundMask};
+			std::list<std::string> persistedImages = persistImages(persistence, imageList, isoTime, cTrigger);
 			
-			// compose alert message
-			{			
-				std::stringstream compose;
-				
-				// Subject, currently colons are erronous during image creation.
-  				strftime(isoTime, sizeof(isoTime),"%F", std::localtime(&cTrigger));	
-				compose << "Intrusion detected " << isoTime;
-				std::string subject = compose.str();
-				
-				// Body
-  				strftime(isoTime, sizeof(isoTime),"%FT%X", std::localtime(&cTrigger));
-				compose.str("");
-				compose << "Possible Intrusion detected (" << isoTime << ") with an image saturation of " 
-						<< saturation * 100.0 << "%. "
-						<< "Please see attachment for detected image area.";
-				std::string body = compose.str();
-				std::cout << body << std::endl;				
-				
-				// Save triggering images fullfilling saturation condition.
-				std::string jpgReal = std::string(isoTime) + std::string("-real.jpg");
-				std::string jpgForeground = std::string(isoTime) + std::string("-foreground.jpg");
-				persistence.saveJpg(frame, jpgReal);
-				persistence.saveJpg(foregroundMask, jpgForeground);
-				std::list<std::string> attachments{jpgReal, jpgForeground};
-				
-				// Send EMail
-				notifier.alert(subject, body, storage, attachments);	
-			}
+			//send mail
+			sendMail(email, isoTime, cTrigger, saturation, persistence, persistedImages);
+	
 		}
 		
 		// Wait and Evaluate pressed keys.
@@ -176,7 +167,10 @@ int main(int argc, char** argv)
 	
 	// Cleanup
 	capture.release();
-	cv::destroyAllWindows();
+	if (visual)
+	{
+		cv::destroyAllWindows();
+	}
 	return 0;
 }
 
@@ -195,5 +189,49 @@ float getImageBusiness(const cv::Mat& mask)
 		}
 	}
 	return static_cast<float>(saturation) / static_cast<float>(maxSaturation); 
+}
+
+std::list<std::string> persistImages(Persistence& persistence, std::list<cv::Mat*> images, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime)
+{
+	std::list<std::string> persisted{};
+	strftime(isoTime, ISO_TIME_BUFFER_SIZE,"%FT%H-%M-%S", std::localtime(&triggerTime));
+	
+	int index = 1;
+	for (auto& image: images)
+	{
+		std::string jpg = std::string(isoTime) + '_' + std::to_string(index) + std::string(".jpg");	
+		if (persistence.saveJpg(*image, jpg)) 
+		{
+			persisted.push_back(jpg);
+		}
+		++index;
+	
+	}
+	return persisted;
+}
+
+void sendMail(const std::string& email, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime, const float saturation, const Persistence& storage, std::list<std::string> attachmentFiles)
+{	
+	// Set from, to
+	EMailNotifier notifier(email, email);
+	std::stringstream compose;	
+
+	// Subject, currently colons are erronous during image creation.
+	compose << "Intrusion detected " << isoTime;
+	std::string subject = compose.str();
+	
+	// Body
+	strftime(isoTime, ISO_TIME_BUFFER_SIZE,"%FT%H:%M:%S", std::localtime(&triggerTime));
+	compose.str("");
+	compose << "Possible Intrusion detected (" << isoTime << ") with an image saturation of " 
+			<< saturation * 100.0 << "%. "
+			<< "Please see attachment for detected image area.";
+	std::string body = compose.str();
+	std::cout << body << std::endl;				
+	
+	// Attachment
+	
+	// Send EMail
+	notifier.alert(subject, body, storage.getLocation(), attachmentFiles);
 }
 
