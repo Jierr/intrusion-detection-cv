@@ -21,7 +21,8 @@ using namespace std;
 using namespace cv;
 
 /*
- * Todo: Record a image sequence, on trigger, store and/or send via mail. 
+ * Todo: Record a image sequence, on trigger, store and/or send via mail.
+ * Reinitializing stream, if there were many faulty frames within a certain time
  */
 
 namespace
@@ -38,6 +39,7 @@ namespace
 	constexpr char ARG_VISUAL[] = "--visual";
 	
 	constexpr unsigned int ISO_TIME_BUFFER_SIZE{255};
+	constexpr unsigned int CAPTURE_ERROR_REINITIALIZE{100};
 }
 
 float getImageBusiness(const cv::Mat& mask);
@@ -115,15 +117,35 @@ int main(int argc, char** argv)
 	bool running{true};	
 	char isoTime[ISO_TIME_BUFFER_SIZE] = {0};		
 	cv::Mat frame, frameSmoothed, foregroundMask, foregroundMaskSmoothed;
+	unsigned int captureErrors{0};
 	while(running) 
-	{		
-		
-		if (!capture.read(frame))
+	{
+		if(captureErrors > CAPTURE_ERROR_REINITIALIZE)
 		{
-			std::cerr << "Could not read frame..." << std::endl;
-			continue;
+			capture.release();
+			if (visual)
+			{
+				cv::destroyAllWindows();
+			}
+			return -1;
 		}
 		
+		try
+		{		
+			if (!capture.read(frame))
+			{
+				std::cerr << "Could not read frame..." << std::endl;
+				++captureErrors;
+				continue;
+			}		
+		}    
+		catch (std::runtime_error& ex) 
+		{
+			std::cerr << "Exception acquiring next frame: " << ex.what() << std::endl;
+			++captureErrors;
+		    continue;	
+	 	}
+	 	
 		// Create Background from noise reduced image
 		cv::blur(frame, frameSmoothed, cv::Size(3,3));
         backgroundSubtractor->apply(frameSmoothed, foregroundMask);
