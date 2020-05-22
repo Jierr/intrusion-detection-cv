@@ -20,13 +20,17 @@
 using namespace std;
 using namespace cv;
 
+/*
+ * Todo: Record a image sequence, on trigger, store and/or send via mail. 
+ */
+
 namespace
 {
 	constexpr int FPS(24);
 	constexpr int MS_PER_FRAME (1000/FPS);
 	constexpr int VK_ESCAPE{27};
-	constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(10);
-	constexpr float SATURATION_TRIGGER = 0.02f;
+	constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(90);
+	constexpr float SATURATION_TRIGGER = 0.035f;
 	
 	constexpr char ARG_URL[] = "--url";
 	constexpr char ARG_EMAIL[] = "--email";
@@ -53,7 +57,7 @@ int main(int argc, char** argv)
 	parser.registerArgument(ARG_URL, "rtsp://user:password@localhost:554/stream");
 	parser.registerArgument(ARG_EMAIL, "my@address.com");
 	parser.registerArgument(ARG_STORAGE, ".");
-	parser.registerArgument(ARG_VISUAL, "True");
+	parser.registerArgument(ARG_VISUAL, "False");
 	parser.parse(argc, argv);
 	
 	auto argUrl = parser[ARG_URL];
