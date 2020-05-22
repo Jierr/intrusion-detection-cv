@@ -31,7 +31,7 @@ namespace
 	constexpr int MS_PER_FRAME (1000/FPS);
 	constexpr int VK_ESCAPE{27};
 	constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(90);
-	constexpr float SATURATION_TRIGGER = 0.035f;
+	constexpr float SATURATION_TRIGGER = 0.03f;
 	
 	constexpr char ARG_URL[] = "--url";
 	constexpr char ARG_EMAIL[] = "--email";

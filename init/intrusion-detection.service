@@ -1,0 +1,18 @@
+[Unit]
+Description=EMail alerts during an home intrusion
+
+[Service]
+Type=forking
+Restart=always
+RestartSec=30s
+TimeoutSec=1min
+IgnoreSIGPIPE=no
+KillMode=process
+GuessMainPID=yes
+RemainAfterExit=no
+ExecStart=/etc/init.d/intrusion-detection.sh start
+ExecStop=/etc/init.d/intrusion-detection.sh stop
+ExecReload=/etc/init.d/intrusion-detection.sh restart
+
+[Install]
+WantedBy=multi-user.target
