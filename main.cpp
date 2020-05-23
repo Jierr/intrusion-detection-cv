@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
@@ -15,6 +16,7 @@
 
 #include "ArgumentParser.hpp"
 #include "EMailNotifier.hpp"
+#include "IntrusionTrigger.hpp"
 #include "Persistence.hpp"
 
 using namespace std;
@@ -27,11 +29,13 @@ using namespace cv;
 
 namespace
 {
-	constexpr int FPS(24);
-	constexpr int MS_PER_FRAME (1000/FPS);
+	constexpr int FPS{24};
+	constexpr int MS_PER_FRAME{1000/FPS};
 	constexpr int VK_ESCAPE{27};
 	constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(90);
-	constexpr float SATURATION_TRIGGER = 0.03f;
+	constexpr double TRIGGER_SATURATION{0.020};
+	constexpr unsigned int TRIGGER_ON_CONSECUTIVE_FRAME{FPS/4};
+	
 	
 	constexpr char ARG_URL[] = "--url";
 	constexpr char ARG_EMAIL[] = "--email";
@@ -43,10 +47,8 @@ namespace
 	constexpr unsigned int CAPTURE_ERROR_REINITIALIZE{100};
 }
 
-float getImageBusiness(const cv::Mat& mask);
 std::list<std::string> persistImages(Persistence& persistence, std::list<cv::Mat*> images, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime);
 void sendMail(const std::string& script, const std::string& email, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime, const float saturation, const Persistence& storage, std::list<std::string> attachmentFiles);
-
 
 int main(int argc, char** argv)
 {
@@ -120,6 +122,7 @@ int main(int argc, char** argv)
 	
 	// Set location for videos & images to be stored.
 	Persistence persistence(storage);
+	IntrusionTrigger intrusionTrigger(TRIGGER_ON_CONSECUTIVE_FRAME, TRIGGER_SATURATION);
 	bool running{true};	
 	char isoTime[ISO_TIME_BUFFER_SIZE] = {0};		
 	cv::Mat frame, frameSmoothed, foregroundMask, foregroundMaskSmoothed;
@@ -164,11 +167,11 @@ int main(int argc, char** argv)
 		if (visual) cv::imshow("ForegroundSmoothed", foregroundMaskSmoothed);
 		
 		// Evaluate image foreground saturation 
-		float saturation = getImageBusiness(foregroundMaskSmoothed);
+		double saturation = intrusionTrigger.update(foregroundMaskSmoothed);
 		
 		// check, if movement was detected		
 		currentTime = std::chrono::system_clock::now();
-		if (saturation > SATURATION_TRIGGER && (currentTime > trigger + TRIGGER_DELAY_SECONDS))
+		if (intrusionTrigger.hasTriggered() && (currentTime > trigger + TRIGGER_DELAY_SECONDS))
 		{
 			// Reset timer for next trigger condition
 			trigger = std::chrono::system_clock::now();
@@ -204,23 +207,6 @@ int main(int argc, char** argv)
 		cv::destroyAllWindows();
 	}
 	return 0;
-}
-
-float getImageBusiness(const cv::Mat& mask)
-{
-	const int maxSaturation = mask.rows * mask.cols;
-	int saturation = 0;
-	for(int i=0; i<mask.rows; i++)
-	{
-		for(int j=0; j<mask.cols; j++) 
-		{
-			if (mask.at<unsigned char>(i,j) != 0)
-			{
-				++saturation;
-			}
-		}
-	}
-	return static_cast<float>(saturation) / static_cast<float>(maxSaturation); 
 }
 
 std::list<std::string> persistImages(Persistence& persistence, std::list<cv::Mat*> images, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime)
