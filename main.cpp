@@ -23,18 +23,18 @@ using namespace std;
 using namespace cv;
 
 /*
- * Todo: Record a image sequence, on trigger, store and/or send via mail.
- * Reinitializing stream, if there were many faulty frames within a certain time
+ * Todo: Record a video, on trigger, store and/or send via mail.
+ * Use colour room which is not as light sensitive
  */
 
 namespace
 {
-	constexpr int FPS{24};
+	constexpr int FPS{14};
 	constexpr int MS_PER_FRAME{1000/FPS};
 	constexpr int VK_ESCAPE{27};
 	constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(90);
 	constexpr double TRIGGER_SATURATION{0.020};
-	constexpr unsigned int TRIGGER_ON_CONSECUTIVE_FRAME{FPS/4};
+	constexpr unsigned int TRIGGER_ON_CONSECUTIVE_FRAME{FPS*3};
 	
 	
 	constexpr char ARG_URL[] = "--url";
@@ -48,7 +48,9 @@ namespace
 }
 
 std::list<std::string> persistImages(Persistence& persistence, std::list<cv::Mat*> images, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime);
-void sendMail(const std::string& script, const std::string& email, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime, const float saturation, const Persistence& storage, std::list<std::string> attachmentFiles);
+void sendMail(const std::string& script, const std::string& email, char isoTime[ISO_TIME_BUFFER_SIZE], 
+		const std::time_t& triggerTime, const float saturation, float fps, 
+		const Persistence& storage, std::list<std::string> attachmentFiles);
 
 int main(int argc, char** argv)
 {
@@ -109,15 +111,16 @@ int main(int argc, char** argv)
 		cv::namedWindow("ForegroundSmoothed", cv::WINDOW_AUTOSIZE);	
 	}
 	
-    cv::Ptr<cv::BackgroundSubtractor> backgroundSubtractor = createBackgroundSubtractorMOG2(FPS * 60 * 5, 32, true);
-    //cv::Ptr<cv::BackgroundSubtractor> backgroundSubtractor = createBackgroundSubtractorKNN(FPS * 60 * 5, 100, true);
-    if (!backgroundSubtractor)
-    {
+    	cv::Ptr<cv::BackgroundSubtractor> backgroundSubtractor = createBackgroundSubtractorMOG2(FPS * 60 * 5, 32, true);
+    	//cv::Ptr<cv::BackgroundSubtractor> backgroundSubtractor = createBackgroundSubtractorKNN(FPS * 60 * 5, 100, true);
+    	if (!backgroundSubtractor)
+    	{
 		std::cerr << "Could not create backgound subtractor..." << std::endl;
 		return -1;    
-    }
+    	}
 	std::chrono::system_clock::time_point trigger = std::chrono::system_clock::now();
 	std::chrono::system_clock::time_point currentTime;
+	std::chrono::system_clock::time_point fpsTimer = std::chrono::system_clock::now();
 	
 	
 	// Set location for videos & images to be stored.
@@ -127,6 +130,8 @@ int main(int argc, char** argv)
 	char isoTime[ISO_TIME_BUFFER_SIZE] = {0};		
 	cv::Mat frame, frameSmoothed, foregroundMask, foregroundMaskSmoothed;
 	unsigned int captureErrors{0};
+	unsigned int frames{0};
+	float fps = 0.0f;
 	while(running) 
 	{
 		if(captureErrors > CAPTURE_ERROR_REINITIALIZE)
@@ -157,20 +162,32 @@ int main(int argc, char** argv)
 	 	
 		// Create Background from noise reduced image
 		cv::blur(frame, frameSmoothed, cv::Size(3,3));
-        backgroundSubtractor->apply(frameSmoothed, foregroundMask);
+        	backgroundSubtractor->apply(frameSmoothed, foregroundMask);
 		if (visual) cv::imshow("Foreground", foregroundMask);
 		
 		// Reduce Noice on forground mask
-        cv::erode(foregroundMask, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
-        cv::dilate(foregroundMaskSmoothed, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
+        	cv::erode(foregroundMask, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
+        	cv::dilate(foregroundMaskSmoothed, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
 		if (visual) cv::imshow("Surveillance", frameSmoothed);
 		if (visual) cv::imshow("ForegroundSmoothed", foregroundMaskSmoothed);
 		
 		// Evaluate image foreground saturation 
 		double saturation = intrusionTrigger.update(foregroundMaskSmoothed);
-		
-		// check, if movement was detected		
+				
 		currentTime = std::chrono::system_clock::now();
+
+		// Calculate Framerate
+		if(currentTime > (fpsTimer + std::chrono::seconds(10)))
+		{
+			auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - fpsTimer);
+			fps = static_cast<float>(frames) / milliseconds.count() * 1000.0;
+			fpsTimer = currentTime;
+			frames = 0;
+			std::cout << "FPS: " << fps << std::endl;
+		}
+		++frames;
+
+		// check, if movement was detected
 		if (intrusionTrigger.hasTriggered() && (currentTime > trigger + TRIGGER_DELAY_SECONDS))
 		{
 			// Reset timer for next trigger condition
@@ -183,21 +200,24 @@ int main(int argc, char** argv)
 			std::list<std::string> persistedImages = persistImages(persistence, imageList, isoTime, cTrigger);
 			
 			//send mail
-			sendMail(scripts, email, isoTime, cTrigger, saturation, persistence, persistedImages);
+			sendMail(scripts, email, isoTime, cTrigger, saturation, fps, persistence, persistedImages);
 	
 		}
-		
-		// Wait and Evaluate pressed keys.
-		int key = cv::waitKey(MS_PER_FRAME);
-		switch(key)
+		if (visual)
 		{
-			case VK_ESCAPE:
-				std::cout << "Terminating..." << std::endl;
-				running = false;
-				break;
-			default:
-				break;				
+			// Wait and Evaluate pressed keys.
+			int key = cv::waitKey(MS_PER_FRAME);
+			switch(key)
+			{
+				case VK_ESCAPE:
+					std::cout << "Terminating..." << std::endl;
+					running = false;
+					break;
+				default:
+					break;				
+			}
 		}
+
 	}
 	
 	// Cleanup
@@ -228,7 +248,9 @@ std::list<std::string> persistImages(Persistence& persistence, std::list<cv::Mat
 	return persisted;
 }
 
-void sendMail(const std::string& script, const std::string& email, char isoTime[ISO_TIME_BUFFER_SIZE], const std::time_t& triggerTime, const float saturation, const Persistence& storage, std::list<std::string> attachmentFiles)
+void sendMail(const std::string& script, const std::string& email, char isoTime[ISO_TIME_BUFFER_SIZE], 
+		const std::time_t& triggerTime, const float saturation, float fps, 
+		const Persistence& storage, std::list<std::string> attachmentFiles)
 {	
 	// Set from, to
 	EMailNotifier notifier(email, email, script);
@@ -243,7 +265,8 @@ void sendMail(const std::string& script, const std::string& email, char isoTime[
 	compose.str("");
 	compose << "Possible Intrusion detected (" << isoTime << ") with an image saturation of " 
 			<< saturation * 100.0 << "%. "
-			<< "Please see attachment for detected image area.";
+			<< "Please see attachment for detected image area." << std::endl
+			<< "Current FPS are " << fps << ".";
 	std::string body = compose.str();
 	std::cout << body << std::endl;				
 	

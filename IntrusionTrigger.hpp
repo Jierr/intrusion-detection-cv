@@ -17,7 +17,7 @@ private:
 	double mTriggerIndicator;
 	double mTriggerCondition;
 	const double mTriggerIndicatorTolerance{0.0001};
-	const double mDegradation{1.1};
+	const double mDegradation{1.01};
 };
 
 #endif //_INTRUSIONTRIGGER_HPP_
