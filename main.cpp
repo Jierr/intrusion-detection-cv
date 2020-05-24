@@ -207,7 +207,7 @@ int main(int argc, char** argv)
 		if (visual)
 		{
 			// Wait and Evaluate pressed keys.
-			int key = cv::waitKey(MS_PER_FRAME);
+			int key = cv::waitKey(1);
 			switch(key)
 			{
 				case VK_ESCAPE:
