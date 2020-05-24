@@ -49,10 +49,12 @@ double IntrusionTrigger::update(const cv::Mat& foreground)
 	}
 	
 	mTriggerCondition = (triggerWeight + mTriggerCondition) / mDegradation;	
+#ifdef _DEBUG
 	if (trigger >= mSaturationTrigger)
 	{
 		std::cout << "Trigger after " << mTriggerFrames << " Frames with Indicator at " << mTriggerIndicator << std::endl
 			  << mTriggerCondition << " > " << mTriggerIndicator << " ?" << std::endl;
 	}
+#endif
 	return trigger; 
 }
