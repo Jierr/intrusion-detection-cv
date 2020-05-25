@@ -16,7 +16,7 @@ for file in $binary
 do
 	dst=$prefix/$file
 	echo Installing $file to $dst
-	cp $file $dst
+	cp bin/$file $dst
 	chmod 755 $dst
 done
 

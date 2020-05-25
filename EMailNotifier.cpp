@@ -14,8 +14,7 @@ EMailNotifier::EMailNotifier(const std::string& from, const std::string& to, con
 void EMailNotifier::alert(const std::string& subject, const std::string& body, const std::string& path, const std::string& attachment)
 {
 	std::stringstream command;
-	auto time = std::chrono::system_clock::now();
-	std::time_t cTime = std::chrono::system_clock::to_time_t(time);
+	
 	command << "echo \"Subject: " << subject
 			<< "\\" << std::endl << std::endl 
 			<< body			
@@ -29,8 +28,6 @@ void EMailNotifier::alert(const std::string& subject, const std::string& body, c
 void EMailNotifier::alert(const std::string& subject, const std::string& body, const std::string& path, const std::list<std::string>& attachments)
 {
 	std::stringstream command;
-	auto time = std::chrono::system_clock::now();
-	std::time_t cTime = std::chrono::system_clock::to_time_t(time);
 	
 	command << mSend << " \"" 
 			<< mFrom << "\" " 

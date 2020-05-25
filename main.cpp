@@ -222,7 +222,7 @@ int main(int argc, char** argv)
 			std::list<std::string> persistedImages = persistImages(persistence, imageList, isoTime, cTrigger);
 			
 			//send mail
-			sendMail(AlertLevel::HIGH, scripts, email, isoTime, cTrigger, minorSaturation, fps, persistence, persistedImages);	
+			sendMail(AlertLevel::HIGH, scripts, email, isoTime, cTrigger, majorSaturation, fps, persistence, persistedImages);	
 		}
 		else if (minorIntrusionTrigger.hasTriggered() && (currentTime > minorTrigger + TRIGGER_DELAY_SECONDS))
 		{
