@@ -16,11 +16,11 @@ void EMailNotifier::alert(const std::string& subject, const std::string& body, c
 	std::stringstream command;
 	
 	command << "echo \"Subject: " << subject
-			<< "\\" << std::endl << std::endl 
-			<< body			
-			<< "\\" << std::endl << "\""
-			<< " | (cat - && uuencode "<< path << "/" << attachment << " " << attachment << ")"
-			<< " | ssmtp -v " << mTo << "&";
+		      << "\\" << std::endl << std::endl 
+			    << body			
+			    << "\\" << std::endl << "\""
+			    << " | (cat - && uuencode "<< path << "/" << attachment << " " << attachment << ")"
+			    << " | ssmtp -v " << mTo << "&";
 			
 	system(command.str().c_str());
 }
@@ -30,10 +30,10 @@ void EMailNotifier::alert(const std::string& subject, const std::string& body, c
 	std::stringstream command;
 	
 	command << mSend << " \"" 
-			<< mFrom << "\" " 
-			<< "\"" << mTo  << "\" "
-			<< "\"" << subject  << "\" "
-			<< "\"" << body  << "\" ";	
+			    << mFrom << "\" " 
+			    << "\"" << mTo  << "\" "
+			    << "\"" << subject  << "\" "
+			    << "\"" << body  << "\" ";	
 	
 	if(!attachments.empty())
 	{

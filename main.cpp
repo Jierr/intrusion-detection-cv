@@ -25,8 +25,8 @@ using namespace cv;
 
 /*
  * Todo: Record a video, on trigger, store and/or send via mail.
- * Use colour room which is not as light sensitive
  * Use high quality image for Email
+ * Use seperate Email service.
  */
 
 namespace
@@ -121,13 +121,13 @@ int main(int argc, char** argv)
 		cv::namedWindow("ForegroundSmoothed", cv::WINDOW_AUTOSIZE);	
 	}
 	
-    	cv::Ptr<cv::BackgroundSubtractor> backgroundSubtractor = createBackgroundSubtractorMOG2(FPS * 60 * 2, 32, true);
-    	//cv::Ptr<cv::BackgroundSubtractor> backgroundSubtractor = createBackgroundSubtractorKNN(FPS * 60 * 5, 100, true);
-    	if (!backgroundSubtractor)
-    	{
-		std::cerr << "Could not create backgound subtractor..." << std::endl;
-		return -1;    
-    	}
+  cv::Ptr<cv::BackgroundSubtractor> backgroundSubtractor = createBackgroundSubtractorMOG2(FPS * 60 * 2, 32, true);
+  //cv::Ptr<cv::BackgroundSubtractor> backgroundSubtractor = createBackgroundSubtractorKNN(FPS * 60 * 5, 100, true);
+  if (!backgroundSubtractor)
+  {
+    std::cerr << "Could not create backgound subtractor..." << std::endl;
+    return -1;    
+  }
 	std::chrono::system_clock::time_point minorTrigger = std::chrono::system_clock::now();
 	std::chrono::system_clock::time_point majorTrigger = std::chrono::system_clock::now();
 	std::chrono::system_clock::time_point currentTime;
@@ -182,20 +182,20 @@ int main(int argc, char** argv)
 		cv::merge(channels, frameSmoothed);
 		cv::cvtColor(frameSmoothed, frameSmoothed, CV_YUV2RGB);
 		
-        	backgroundSubtractor->apply(frameSmoothed, foregroundMask);
-		if (visual) cv::imshow("Foreground", foregroundMask);
-		
-		// Reduce Noice on forground mask
-        	cv::erode(foregroundMask, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
-        	cv::dilate(foregroundMaskSmoothed, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
-		if (visual) cv::imshow("Surveillance", frameSmoothed);
-		if (visual) cv::imshow("ForegroundSmoothed", foregroundMaskSmoothed);
-		
-		// Evaluate image foreground saturation 
-		double minorSaturation = minorIntrusionTrigger.update(foregroundMaskSmoothed);
-		double majorSaturation = majorIntrusionTrigger.update(foregroundMaskSmoothed);
-				
-		currentTime = std::chrono::system_clock::now();
+    backgroundSubtractor->apply(frameSmoothed, foregroundMask);
+    if (visual) cv::imshow("Foreground", foregroundMask);
+
+    // Reduce Noice on forground mask
+    cv::erode(foregroundMask, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
+    cv::dilate(foregroundMaskSmoothed, foregroundMaskSmoothed, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5,5)));
+    if (visual) cv::imshow("Surveillance", frameSmoothed);
+    if (visual) cv::imshow("ForegroundSmoothed", foregroundMaskSmoothed);
+
+    // Evaluate image foreground saturation 
+    double minorSaturation = minorIntrusionTrigger.update(foregroundMaskSmoothed);
+    double majorSaturation = majorIntrusionTrigger.update(foregroundMaskSmoothed);
+
+    currentTime = std::chrono::system_clock::now();
 
 		// Calculate Framerate
 		if(currentTime > (fpsTimer + std::chrono::seconds(10)))
@@ -279,8 +279,7 @@ std::list<std::string> persistImages(Persistence& persistence, std::list<cv::Mat
 		{
 			persisted.push_back(jpg);
 		}
-		++index;
-	
+		++index;	
 	}
 	return persisted;
 }
@@ -313,9 +312,7 @@ void sendMail(const AlertLevel level, const std::string& script, const std::stri
 			<< "Current FPS are " << fps << ".";
 	std::string body = compose.str();
 	std::cout << body << std::endl;				
-	
-	// Attachment
-	
+		
 	// Send EMail
 	notifier.alert(subject, body, storage.getLocation(), attachmentFiles);
 }
