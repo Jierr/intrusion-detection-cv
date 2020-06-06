@@ -10,7 +10,7 @@ obj:= $(patsubst %.cpp,obj/%.o,$(cppsrc))
 
 project:=bin/tapocam
 
-.PHONY: all scripts env clean install uninstall
+.PHONY: env clean all scripts install uninstall
 
 all: $(project)
 
@@ -19,19 +19,19 @@ env:
 	mkdir -p obj
 	
 clean:
-	rm -rf bin
-	rm -rf obj
+	rm -rf bin/*
+	rm -rf obj/*
 	
 $(project): env scripts $(obj) 
 	$(CPP) -o $(project) $(obj) $(LFLAGS)	
 
+obj/%.o: %.cpp
+	$(CPP) -c -o $@ $< $(CPPFLAGS)
+	
 scripts: env $(scriptdst)
 
 bin/%.sh: %.sh
 	cp $< $@
-
-obj/%.o: %.cpp
-	$(CPP) -c -o $@ $< $(CPPFLAGS)
 
 install:
 	./install.sh
