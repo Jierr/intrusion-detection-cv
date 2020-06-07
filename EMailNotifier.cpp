@@ -14,7 +14,7 @@ constexpr char sendScript[] = "idcv-sendEmail.sh";
 
 EMailNotifier::EMailNotifier(const std::string &from, const std::string &to, const std::string &sendScriptLocation)
         :
-        mFrom(from), mTo(to), mSend(sendScriptLocation + sendScript), mSendStatus(0), mDone(false)
+        mFrom(from), mTo(to), mSend(sendScriptLocation + '/' + sendScript), mSendStatus(0), mDone(false)
 {
 }
 
