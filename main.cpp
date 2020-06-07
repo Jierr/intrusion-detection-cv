@@ -10,6 +10,10 @@
 #include <sstream>
 #include <string>
 
+// daemon
+#include <atomic>
+#include <mutex>
+
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -21,6 +25,7 @@
 #include "EMailNotifier.hpp"
 #include "IntrusionTrigger.hpp"
 #include "Persistence.hpp"
+#include "Utility.hpp"
 
 using namespace std;
 using namespace cv;
@@ -38,13 +43,18 @@ using namespace cv;
 
 namespace
 {
+constexpr char DAEMON_NAME[] = "tapocam-intrusion-daemon";
+
 constexpr int FPS { 14 };
 constexpr int MS_PER_FRAME { 1000 / FPS };
 constexpr int VK_ESCAPE { 27 };
-constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(90);
+constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(10);
 constexpr double TRIGGER_SATURATION { 0.020 };
 constexpr unsigned int MINOR_TRIGGER_ON_CONSECUTIVE_FRAME { FPS * 3 };
 constexpr unsigned int MAJOR_TRIGGER_ON_CONSECUTIVE_FRAME { FPS * 10 };
+
+constexpr char ARG_FOREGROUND[] = "--foreground";
+constexpr char ARG_RUNDIR[] = "--run-dir";
 
 constexpr char ARG_URL[] = "--url";
 constexpr char ARG_EMAIL[] = "--email";
@@ -72,7 +82,110 @@ sendMail(const AlertLevel level, EMailNotifier &notifier, char isoTime[ISO_TIME_
         const std::time_t &triggerTime, const float saturation, float fps, const Persistence &storage,
         std::list<std::string> attachmentFiles);
 
+class IntrusionDetectionDaemon: public Daemon
+{
+public:
+    explicit IntrusionDetectionDaemon(const std::string &name);
+    ~IntrusionDetectionDaemon() = default;
+    int run(int argc, char **argv) override;
+
+    static std::shared_ptr<IntrusionDetectionDaemon> getInstance(const std::string &name);
+
+private:
+    __sighandler_t getSignalHandler() override;
+    static void signalHandler(int number);
+    static std::mutex mLock;
+    static std::shared_ptr<IntrusionDetectionDaemon> mDaemon;
+    static std::atomic<bool> mRunning;
+};
+
 int main(int argc, char **argv)
+{
+    ArgumentParser parser;
+    bool foreground { true };
+    std::string runDir = "/";
+    parser.registerArgument(ARG_FOREGROUND, "true");
+    parser.registerArgument(ARG_RUNDIR, "/");
+    parser.parse(argc, argv);
+    if (parser[ARG_FOREGROUND].exists)
+    {
+        foreground = (Utility::toLower(parser[ARG_FOREGROUND].value) == "true");
+    }
+
+    if (parser[ARG_RUNDIR].exists)
+    {
+        runDir = parser[ARG_RUNDIR].value;
+    }
+
+    std::shared_ptr<IntrusionDetectionDaemon> daemon(IntrusionDetectionDaemon::getInstance(DAEMON_NAME));
+    std::cout << "Starting Daemon...";
+
+    if (foreground)
+    {
+        std::cout << " in foreground." << std::endl;
+        return daemon->run(argc, argv);
+    }
+    else
+    {
+        std::cout << " in background." << std::endl;
+        daemon->openLog();
+        daemon->setRunDir(runDir);
+        if (daemon->daemonize())
+        {
+            return daemon->run(argc, argv);
+        }
+        else
+        {
+            std::cerr << " failed.";
+            return -1;
+        }
+    }
+    return 0;
+}
+
+std::mutex IntrusionDetectionDaemon::mLock;
+std::shared_ptr<IntrusionDetectionDaemon> IntrusionDetectionDaemon::mDaemon;
+std::atomic<bool> IntrusionDetectionDaemon::mRunning;
+
+__sighandler_t IntrusionDetectionDaemon::getSignalHandler()
+{
+    return signalHandler;
+}
+void IntrusionDetectionDaemon::signalHandler(int sig)
+{
+    std::cout << "Interrupt signal (" << sig << ") received.\n";
+    switch (sig)
+    {
+    case SIGHUP:
+    case SIGTERM:
+    case SIGINT:
+        mRunning = false;
+        break;
+    default:
+        break;
+    }
+}
+
+IntrusionDetectionDaemon::IntrusionDetectionDaemon(const std::string &name)
+        :
+        Daemon(name)
+{
+    mRunning = false;
+}
+
+std::shared_ptr<IntrusionDetectionDaemon> IntrusionDetectionDaemon::getInstance(const std::string &name)
+{
+    mLock.lock();
+    if (!mDaemon)
+    {
+        mRunning = false;
+        mDaemon = std::shared_ptr<IntrusionDetectionDaemon>(new IntrusionDetectionDaemon(name));
+    }
+    mLock.unlock();
+    return mDaemon;
+}
+
+int IntrusionDetectionDaemon::run(int argc, char **argv)
 {
     std::string url;
     std::string email;
@@ -252,7 +365,7 @@ int main(int argc, char **argv)
         {
             std::cerr << "Sending the last Email failed!";
         }
-        else
+        else if (notifier.check() == EMailNotifier::EMailSendStatus::Success)
         {
             std::cout << "Sending the last Email succeeded!";
         }

@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <list>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -32,6 +33,7 @@ private:
     std::atomic<int> mSendStatus;
     std::atomic<bool> mDone;
     std::unique_ptr<std::thread> mAlertThread;
+    std::mutex mLock;
 
     void run(const std::string &command);
     bool isAlertSuccess();

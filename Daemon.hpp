@@ -8,9 +8,8 @@
 #ifndef _DAEMON_HPP_
 #define _DAEMON_HPP_
 
-#include <atomic>
+#include <csignal>
 #include <memory>
-#include <mutex>
 #include <string>
 
 class Daemon
@@ -22,23 +21,18 @@ public:
 
     virtual ~Daemon() = default;
     virtual bool daemonize();
-    virtual int run(int argc, char **argv);
-    static std::shared_ptr<Daemon> getInstance();
-    void setWorkingDirectory(const std::string &path);
+    virtual int run(int argc, char **argv) = 0;
+    void setRunDir(const std::string &path);
+    void openLog();
 
 protected:
-    Daemon();
-    static void signalHandler(int number);
-    static std::mutex mLock;
-    static std::shared_ptr<Daemon> mDaemon;
-    static std::atomic<bool> mRunning;
+    explicit Daemon(const std::string& name);
+    virtual __sighandler_t getSignalHandler() = 0;
 
     const std::string mName;
     const std::string mPidFile;
     pid_t mPid { 0 };
     std::string mWorkingDirectory { "/" };
-
-    void openLog();
 };
 
 #endif /* _DAEMON_HPP_ */

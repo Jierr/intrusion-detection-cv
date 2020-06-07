@@ -8,7 +8,6 @@
 #include "Daemon.hpp"
 
 #include <cstdio>
-#include <csignal>
 #include <fcntl.h>
 #include <iostream>
 #include <syslog.h>
@@ -16,20 +15,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-std::mutex Daemon::mLock;
-std::shared_ptr<Daemon> Daemon::mDaemon;
-std::atomic<bool> Daemon::mRunning;
-
 namespace
 {
 constexpr char DAEMON_NAME[] = "tapocam-intrusion-daemon";
 }
 
-Daemon::Daemon()
+Daemon::Daemon(const std::string& name)
         :
-        mName { DAEMON_NAME }, mPidFile { std::string("/var/run/") + DAEMON_NAME + ".pid" }
+        mName { name }, mPidFile { std::string("/var/run/") + name + ".pid" }
 {
-    mRunning = false;
 }
 
 // https://gist.github.com/faberyx/b07d146e11efbad1643f3e8ba6f1a475
@@ -54,7 +48,7 @@ bool Daemon::daemonize()
     sigprocmask(SIG_BLOCK, &newSigSet, NULL); /* Block the above specified signals */
 
     /* Set up a signal handler */
-    newSigAction.sa_handler = &Daemon::signalHandler;
+    newSigAction.sa_handler = getSignalHandler();
     sigemptyset(&newSigAction.sa_mask);
     newSigAction.sa_flags = 0;
 
@@ -136,6 +130,7 @@ bool Daemon::daemonize()
         syslog(LOG_ERR, "Could not write pid file -> Aborting.");
         return false;
     }
+    // Keep pidFilehandle open until process exits, otherwise pid file lock will be freed.
     return true;
 }
 
@@ -144,36 +139,9 @@ int Daemon::run(int argc, char **argv)
     return 0;
 }
 
-std::shared_ptr<Daemon> Daemon::getInstance()
-{
-    mLock.lock();
-    if (!mDaemon)
-    {
-        mRunning = false;
-        mDaemon = std::shared_ptr<Daemon>(new Daemon());
-    }
-    mLock.unlock();
-    return mDaemon;
-}
-
-void Daemon::setWorkingDirectory(const std::string &path)
+void Daemon::setRunDir(const std::string &path)
 {
     mWorkingDirectory = path;
-}
-
-void Daemon::signalHandler(int sig)
-{
-    std::cout << "Interrupt signal (" << sig << ") received.\n";
-    switch (sig)
-    {
-    case SIGHUP:
-    case SIGTERM:
-    case SIGINT:
-        mRunning = false;
-        break;
-    default:
-        break;
-    }
 }
 
 void Daemon::openLog()

@@ -22,7 +22,10 @@ void EMailNotifier::alert(const std::string &subject, const std::string &body, c
             << " | (cat - && uuencode " << path << "/" << attachment << " " << attachment << ")" << " | ssmtp -v "
             << mTo;
 
+    mLock.lock();
+    mDone = false;
     mAlertThread.reset(new std::thread(&EMailNotifier::run, this, command.str()));
+    mLock.unlock();
 }
 
 void EMailNotifier::alert(const std::string &subject, const std::string &body, const std::string &path,
@@ -45,9 +48,10 @@ void EMailNotifier::alert(const std::string &subject, const std::string &body, c
 
     std::cout << "Execute: '" << command.str() << "'" << std::endl;
 
+    mLock.lock();
+    mDone = false;
     mAlertThread.reset(new std::thread(&EMailNotifier::run, this, command.str()));
-
-    return;
+    mLock.unlock();
 }
 
 bool EMailNotifier::isAlertSuccess()
@@ -61,40 +65,42 @@ bool EMailNotifier::isAlertSuccess()
 
 void EMailNotifier::run(const std::string &command)
 {
-    mDone = false;
+    mLock.lock();
     mSendStatus = -1;
+    mLock.unlock();
     mSendStatus = system(command.c_str());
+    mLock.lock();
     mDone = true;
+    mLock.unlock();
 }
 
 EMailNotifier::EMailSendStatus EMailNotifier::check()
 {
+    mLock.lock();
     EMailSendStatus status = EMailSendStatus::None;
-    if (mDone)
+    if (mDone && mAlertThread)
     {
-        if (mAlertThread && mAlertThread->joinable())
+        if (mAlertThread->joinable())
         {
+            std::cerr << "EMailNotifier::Thread finished -> join" << std::endl;
             mAlertThread->join();
             mAlertThread.reset(nullptr);
+        }
 
-            if (isAlertSuccess())
-            {
-                status = EMailSendStatus::Success;
-            }
-            else
-            {
-                status = EMailSendStatus::Error;
-            }
+        if (isAlertSuccess())
+        {
+            status = EMailSendStatus::Success;
+        }
+        else
+        {
+            status = EMailSendStatus::Error;
         }
     }
-    else if (mAlertThread && !mAlertThread->joinable())
+    else if (!mDone && mAlertThread)
     {
         status = EMailSendStatus::InProgress;
     }
-    else
-    {
-        mDone = true;
-    }
+    mLock.unlock();
     return status;
 }
 
