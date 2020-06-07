@@ -19,7 +19,7 @@ public:
     };
 
     EMailNotifier(const std::string &from, const std::string &to, const std::string &sendScriptLocation);
-    virtual ~EMailNotifier() = default;
+    virtual ~EMailNotifier();
     void alert(const std::string &subject, const std::string &body, const std::string &path,
             const std::string &attachment);
     void alert(const std::string &subject, const std::string &body, const std::string &path,

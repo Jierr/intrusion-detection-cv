@@ -2,7 +2,7 @@ CPP:=g++
 CPPFLAGS:=-O3 -Wall
 LFLAGS:=-lopencv_video -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_video -lopencv_imgcodecs -lopencv_videoio -pthread
 
-scriptsrc:=send.sh
+scriptsrc:=idcv-sendEmail.sh
 scriptdst:=$(patsubst %.sh,bin/%.sh,$(scriptsrc))
 
 cppsrc:= $(wildcard *.cpp)

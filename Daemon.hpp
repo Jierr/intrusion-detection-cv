@@ -26,13 +26,13 @@ public:
     void openLog();
 
 protected:
-    explicit Daemon(const std::string& name);
+    explicit Daemon(const std::string &name);
     virtual __sighandler_t getSignalHandler() = 0;
 
     const std::string mName;
     const std::string mPidFile;
     pid_t mPid { 0 };
-    std::string mWorkingDirectory { "/" };
+    std::string mWorkingDirectory { "/tmp/" };
 };
 
 #endif /* _DAEMON_HPP_ */

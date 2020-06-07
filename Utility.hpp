@@ -12,7 +12,7 @@
 
 namespace Utility
 {
-std::string toLower(const std::string& str);    
+std::string toLower(const std::string &str);
 } // Utility
 
 #endif /* _UTILITY_HPP_ */

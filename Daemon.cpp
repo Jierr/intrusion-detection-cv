@@ -20,7 +20,7 @@ namespace
 constexpr char DAEMON_NAME[] = "tapocam-intrusion-daemon";
 }
 
-Daemon::Daemon(const std::string& name)
+Daemon::Daemon(const std::string &name)
         :
         mName { name }, mPidFile { std::string("/var/run/") + name + ".pid" }
 {
@@ -110,7 +110,7 @@ bool Daemon::daemonize()
     if (pidFilehandle == -1)
     {
         /* Couldn't open lock file */
-        syslog(LOG_INFO, "Could not open PID lock file %s, exiting", mPidFile.c_str());
+        syslog(LOG_ERR, "Could not open PID lock file %s, exiting", mPidFile.c_str());
         exit(EXIT_FAILURE);
     }
 
@@ -118,7 +118,7 @@ bool Daemon::daemonize()
     if (lockf(pidFilehandle, F_TLOCK, 0) == -1)
     {
         /* Couldn't get lock on lock file */
-        syslog(LOG_INFO, "Could not lock PID lock file %s, exiting", mPidFile.c_str());
+        syslog(LOG_ERR, "Could not lock PID lock file %s, exiting", mPidFile.c_str());
         exit(EXIT_FAILURE);
     }
 

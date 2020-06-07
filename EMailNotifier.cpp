@@ -7,10 +7,26 @@
 
 #include "EMailNotifier.hpp"
 
+namespace
+{
+constexpr char sendScript[] = "idcv-sendEmail.sh";
+}
+
 EMailNotifier::EMailNotifier(const std::string &from, const std::string &to, const std::string &sendScriptLocation)
         :
-        mFrom(from), mTo(to), mSend(sendScriptLocation + "/send.sh"), mSendStatus(0), mDone(false)
+        mFrom(from), mTo(to), mSend(sendScriptLocation + sendScript), mSendStatus(0), mDone(false)
 {
+}
+
+EMailNotifier::~EMailNotifier()
+{
+    if (mAlertThread)
+    {
+        mLock.lock();
+        mDone = true;
+        mAlertThread.reset(nullptr);
+        mLock.unlock();
+    }
 }
 
 void EMailNotifier::alert(const std::string &subject, const std::string &body, const std::string &path,

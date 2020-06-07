@@ -3,7 +3,7 @@
 prefix=/usr/local/bin
 init_dir=/etc/init.d
 service_dir=/etc/systemd/system
-binary="tapocam send.sh"
+binary="tapocam idcv-sendEmail.sh"
 init="intrusion-detection.sh"
 service="intrusion-detection.service"
 

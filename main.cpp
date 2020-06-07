@@ -43,12 +43,12 @@ using namespace cv;
 
 namespace
 {
-constexpr char DAEMON_NAME[] = "tapocam-intrusion-daemon";
+constexpr char DAEMON_NAME[] = "intrusion-detection";
 
 constexpr int FPS { 14 };
 constexpr int MS_PER_FRAME { 1000 / FPS };
 constexpr int VK_ESCAPE { 27 };
-constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(10);
+constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(90);
 constexpr double TRIGGER_SATURATION { 0.020 };
 constexpr unsigned int MINOR_TRIGGER_ON_CONSECUTIVE_FRAME { FPS * 3 };
 constexpr unsigned int MAJOR_TRIGGER_ON_CONSECUTIVE_FRAME { FPS * 10 };
@@ -103,19 +103,15 @@ int main(int argc, char **argv)
 {
     ArgumentParser parser;
     bool foreground { true };
-    std::string runDir = "/";
+    std::string runDir = "/tmp/";
     parser.registerArgument(ARG_FOREGROUND, "true");
-    parser.registerArgument(ARG_RUNDIR, "/");
+    parser.registerArgument(ARG_RUNDIR, "/tmp/");
     parser.parse(argc, argv);
-    if (parser[ARG_FOREGROUND].exists)
-    {
-        foreground = (Utility::toLower(parser[ARG_FOREGROUND].value) == "true");
-    }
 
+    if (parser[ARG_FOREGROUND].exists)
+        foreground = (Utility::toLower(parser[ARG_FOREGROUND].value) == "true");
     if (parser[ARG_RUNDIR].exists)
-    {
         runDir = parser[ARG_RUNDIR].value;
-    }
 
     std::shared_ptr<IntrusionDetectionDaemon> daemon(IntrusionDetectionDaemon::getInstance(DAEMON_NAME));
     std::cout << "Starting Daemon...";
@@ -151,6 +147,7 @@ __sighandler_t IntrusionDetectionDaemon::getSignalHandler()
 {
     return signalHandler;
 }
+
 void IntrusionDetectionDaemon::signalHandler(int sig)
 {
     std::cout << "Interrupt signal (" << sig << ") received.\n";
@@ -170,7 +167,7 @@ IntrusionDetectionDaemon::IntrusionDetectionDaemon(const std::string &name)
         :
         Daemon(name)
 {
-    mRunning = false;
+    mRunning = true;
 }
 
 std::shared_ptr<IntrusionDetectionDaemon> IntrusionDetectionDaemon::getInstance(const std::string &name)
@@ -178,7 +175,7 @@ std::shared_ptr<IntrusionDetectionDaemon> IntrusionDetectionDaemon::getInstance(
     mLock.lock();
     if (!mDaemon)
     {
-        mRunning = false;
+        mRunning = true;
         mDaemon = std::shared_ptr<IntrusionDetectionDaemon>(new IntrusionDetectionDaemon(name));
     }
     mLock.unlock();
@@ -268,13 +265,12 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
     Persistence persistence(storage);
     IntrusionTrigger minorIntrusionTrigger(MINOR_TRIGGER_ON_CONSECUTIVE_FRAME, TRIGGER_SATURATION);
     IntrusionTrigger majorIntrusionTrigger(MAJOR_TRIGGER_ON_CONSECUTIVE_FRAME, TRIGGER_SATURATION);
-    bool running { true };
     char isoTime[ISO_TIME_BUFFER_SIZE] = { 0 };
     cv::Mat frame, frameSmoothed, foregroundMask, foregroundMaskSmoothed;
     unsigned int captureErrors { 0 };
     unsigned int frames { 0 };
     float fps = 0.0f;
-    while (running && (captureErrors < CAPTURE_ERROR_REINITIALIZE) && capture.isOpened())
+    while (mRunning && (captureErrors < CAPTURE_ERROR_REINITIALIZE) && capture.isOpened())
     {
         try
         {
@@ -378,7 +374,7 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
             {
             case VK_ESCAPE:
                 std::cout << "Terminating..." << std::endl;
-                running = false;
+                mRunning = false;
                 break;
             default:
                 break;
