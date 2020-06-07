@@ -1,11 +1,14 @@
 #include <chrono>
 #include <cstdlib>
 #include <ctime>
+#include <exception>
 #include <iostream>
 #include <memory>
 #include <sstream>
 
 #include "EMailNotifier.hpp"
+
+#include <unistd.h>
 
 namespace
 {
@@ -14,7 +17,12 @@ constexpr char sendScript[] = "idcv-sendEmail.sh";
 
 EMailNotifier::EMailNotifier(const std::string &from, const std::string &to, const std::string &sendScriptLocation)
         :
-        mFrom(from), mTo(to), mSend(sendScriptLocation + '/' + sendScript), mSendStatus(0), mDone(false)
+        mFrom(from),
+        mTo(to),
+        mSend(sendScriptLocation + '/' + sendScript),
+        mSendStatus(0),
+        mDone(false),
+        mAllowCancel(false)
 {
 }
 
@@ -38,10 +46,13 @@ void EMailNotifier::alert(const std::string &subject, const std::string &body, c
             << " | (cat - && uuencode " << path << "/" << attachment << " " << attachment << ")" << " | ssmtp -v "
             << mTo;
 
-    mLock.lock();
+    cancel();
     mDone = false;
+    mAllowCancel = false;
     mAlertThread.reset(new std::thread(&EMailNotifier::run, this, command.str()));
-    mLock.unlock();
+    cancel();
+    mAllowCancel = false;
+    mAlertThread.reset(new std::thread(&EMailNotifier::run, this, command.str()));
 }
 
 void EMailNotifier::alert(const std::string &subject, const std::string &body, const std::string &path,
@@ -64,10 +75,14 @@ void EMailNotifier::alert(const std::string &subject, const std::string &body, c
 
     std::cout << "Execute: '" << command.str() << "'" << std::endl;
 
-    mLock.lock();
+    cancel();
     mDone = false;
+    mAllowCancel = false;
     mAlertThread.reset(new std::thread(&EMailNotifier::run, this, command.str()));
-    mLock.unlock();
+    cancel();
+    mAllowCancel = false;
+    mAlertThread.reset(new std::thread(&EMailNotifier::run, this, command.str()));
+
 }
 
 bool EMailNotifier::isAlertSuccess()
@@ -88,6 +103,38 @@ void EMailNotifier::run(const std::string &command)
     mLock.lock();
     mDone = true;
     mLock.unlock();
+}
+
+void EMailNotifier::cancel()
+{
+    mLock.lock();
+    if (mAlertThread)
+    {
+        do
+        {
+            std::cerr << "EMailNotifier::cancel Wait for Cancel Approvement." << std::endl;
+            usleep(10000);
+
+        } while (!mAllowCancel);
+
+        auto handle = mAlertThread->native_handle();
+        std::cerr << "EMailNotifier::cancel Thread Handle = " << handle << std::endl;
+        if (pthread_cancel(handle) != 0)
+        {
+            std::cerr << "EMailNotifier::cancel Could not cancel thread." << std::endl;
+        }
+        else
+        {
+            std::cerr << "EMailNotifier::cancel Thread canceled." << std::endl;
+            std::cerr << "EMailNotifier::cancel Thread Joining..." << std::endl;
+            usleep(10000);
+            mAlertThread->join();
+            std::cerr << "EMailNotifier::cancel Thread joined." << std::endl;
+        }
+        mAlertThread.reset(nullptr);
+    }
+    mLock.unlock();
+    std::cerr << "EMailNotifier::cancel Thread unlocked." << std::endl;
 }
 
 EMailNotifier::EMailSendStatus EMailNotifier::check()

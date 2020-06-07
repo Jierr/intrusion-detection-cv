@@ -32,10 +32,13 @@ private:
     std::string mSend;
     std::atomic<int> mSendStatus;
     std::atomic<bool> mDone;
+    std::atomic<bool> mAllowCancel;
     std::unique_ptr<std::thread> mAlertThread;
     std::mutex mLock;
 
     void run(const std::string &command);
+    void cancel();
+
     bool isAlertSuccess();
 };
 
