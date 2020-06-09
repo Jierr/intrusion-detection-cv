@@ -3,7 +3,9 @@
 #include <ctime>
 #include <exception>
 #include <iostream>
+#include <limits>
 #include <memory>
+#include <pthread.h>
 #include <sstream>
 
 #include "EMailNotifier.hpp"
@@ -12,29 +14,163 @@
 
 namespace
 {
-constexpr char sendScript[] = "idcv-sendEmail.sh";
+constexpr char SEND_SCRIPT[] = "idcv-sendEmail.sh";
+constexpr int MAXIMUM_RUNNING_THREADS { 3 };
+}
+
+EMailNotifier::ThreadContext::ThreadContext(EMailNotifier *emailNotifier, const ThreadId &prio)
+        :
+        thread(0), ready(false), done(false), sendStatus(-1), priority(prio), notifier(emailNotifier)
+{
+
+}
+
+void EMailNotifier::ThreadContext::signalReady()
+{
+    ready = true;
+}
+
+void EMailNotifier::ThreadContext::signalDone()
+{
+    mutex.lock();
+    done = true;
+    mutex.unlock();
+}
+
+void EMailNotifier::ThreadContext::waitUntilReady() const
+{
+    while (!ready)
+    {
+        usleep(100000);
+        pthread_yield();
+    }
+}
+
+bool EMailNotifier::ThreadContext::isDone() const
+{
+    return done;
+}
+
+void* arbiter(void *arg)
+{
+    EMailNotifier::ThreadContext *context = reinterpret_cast<EMailNotifier::ThreadContext*>(arg);
+    if (context == nullptr)
+    {
+        return nullptr;
+    }
+
+    context->waitUntilReady();
+    if (!context->command.empty())
+    {
+        int status = context->notifier->run(context->command);
+        context->sendStatus = status;
+    }
+
+    context->signalDone();
+    return nullptr;
+}
+
+bool EMailNotifier::startThread(const std::string &command)
+{
+    pthread_t thread;
+
+    ++mThreadPriority;
+    mContexts.emplace(mThreadPriority, new ThreadContext(this, mThreadPriority));
+    if (pthread_create(&thread, NULL, &arbiter, mContexts[mThreadPriority].get()) != 0)
+    {
+        mContexts.erase(mThreadPriority);
+        return false;
+    }
+
+    mContexts[mThreadPriority]->thread = thread;
+    mContexts[mThreadPriority]->signalReady();
+
+    return true;
+}
+
+void EMailNotifier::cancelThread(pthread_t thread)
+{
+    if (pthread_cancel(thread) != 0)
+        return;
+
+    void *result = nullptr;
+    if (pthread_join(thread, &result) != 0)
+        return;
+
+    if (result == PTHREAD_CANCELED)
+    {
+        std::cout << "Thread canceled.";
+    }
+}
+
+void EMailNotifier::stopThreadWithLowestPriority()
+{
+    if (mContexts.empty())
+        return;
+
+    auto context = mContexts.begin();
+    pthread_t thread = context->second->thread;
+    context->second->mutex.lock();
+    if (!context->second->isDone())
+    {
+        ThreadId key = context->second->priority;
+        cancelThread(thread);
+        context->second->mutex.unlock();
+        mContexts.erase(key);
+    }
+    else
+    {
+        context->second->mutex.unlock();
+        cleanupThreads();
+    }
+}
+
+void EMailNotifier::cleanupThreads()
+{
+    for (const auto &context : mContexts)
+    {
+        if (context.second->isDone())
+        {
+            void *result = nullptr;
+            pthread_t thread = context.second->thread;
+            ThreadId key = context.second->priority;
+            pthread_join(thread, &result);
+            mContexts.erase(key);
+        }
+    }
+}
+
+void EMailNotifier::terminateAllThreads()
+{
+    while (getThreadCount() > 0)
+    {
+        stopThreadWithLowestPriority();
+    }
+}
+
+int EMailNotifier::getThreadCount()
+{
+    return mContexts.size();
 }
 
 EMailNotifier::EMailNotifier(const std::string &from, const std::string &to, const std::string &sendScriptLocation)
         :
-        mFrom(from),
-        mTo(to),
-        mSend(sendScriptLocation + '/' + sendScript),
-        mSendStatus(0),
-        mDone(false),
-        mAllowCancel(false)
+        mFrom(from), mTo(to), mSend(sendScriptLocation + '/' + SEND_SCRIPT), mThreadPriority(0)
 {
 }
 
 EMailNotifier::~EMailNotifier()
 {
-    if (mAlertThread)
+    terminateAllThreads();
+}
+
+void EMailNotifier::send(const std::string &command)
+{
+    if (getThreadCount() > MAXIMUM_RUNNING_THREADS)
     {
-        mLock.lock();
-        mDone = true;
-        mAlertThread.reset(nullptr);
-        mLock.unlock();
+        stopThreadWithLowestPriority();
     }
+    startThread(command);
 }
 
 void EMailNotifier::alert(const std::string &subject, const std::string &body, const std::string &path,
@@ -46,13 +182,7 @@ void EMailNotifier::alert(const std::string &subject, const std::string &body, c
             << " | (cat - && uuencode " << path << "/" << attachment << " " << attachment << ")" << " | ssmtp -v "
             << mTo;
 
-    cancel();
-    mDone = false;
-    mAllowCancel = false;
-    mAlertThread.reset(new std::thread(&EMailNotifier::run, this, command.str()));
-    cancel();
-    mAllowCancel = false;
-    mAlertThread.reset(new std::thread(&EMailNotifier::run, this, command.str()));
+    send(command.str());
 }
 
 void EMailNotifier::alert(const std::string &subject, const std::string &body, const std::string &path,
@@ -74,96 +204,28 @@ void EMailNotifier::alert(const std::string &subject, const std::string &body, c
     }
 
     std::cout << "Execute: '" << command.str() << "'" << std::endl;
-
-    cancel();
-    mDone = false;
-    mAllowCancel = false;
-    mAlertThread.reset(new std::thread(&EMailNotifier::run, this, command.str()));
-    cancel();
-    mAllowCancel = false;
-    mAlertThread.reset(new std::thread(&EMailNotifier::run, this, command.str()));
-
+    send(command.str());
 }
 
-bool EMailNotifier::isAlertSuccess()
+bool EMailNotifier::isAlertSuccess(const ThreadId &threadId)
 {
-    if (mDone)
+    if (mContexts[threadId]->isDone())
     {
-        return (mSendStatus == 0);
+        return (mContexts[threadId]->sendStatus == 0);
     }
     return true;
 }
 
-void EMailNotifier::run(const std::string &command)
+int EMailNotifier::run(const std::string &command)
 {
-    mLock.lock();
-    mSendStatus = -1;
-    mLock.unlock();
-    mSendStatus = system(command.c_str());
-    mLock.lock();
-    mDone = true;
-    mLock.unlock();
-}
-
-void EMailNotifier::cancel()
-{
-    mLock.lock();
-    if (mAlertThread)
-    {
-        do
-        {
-            std::cerr << "EMailNotifier::cancel Wait for Cancel Approvement." << std::endl;
-            usleep(10000);
-
-        } while (!mAllowCancel);
-
-        auto handle = mAlertThread->native_handle();
-        std::cerr << "EMailNotifier::cancel Thread Handle = " << handle << std::endl;
-        if (pthread_cancel(handle) != 0)
-        {
-            std::cerr << "EMailNotifier::cancel Could not cancel thread." << std::endl;
-        }
-        else
-        {
-            std::cerr << "EMailNotifier::cancel Thread canceled." << std::endl;
-            std::cerr << "EMailNotifier::cancel Thread Joining..." << std::endl;
-            usleep(10000);
-            mAlertThread->join();
-            std::cerr << "EMailNotifier::cancel Thread joined." << std::endl;
-        }
-        mAlertThread.reset(nullptr);
-    }
-    mLock.unlock();
-    std::cerr << "EMailNotifier::cancel Thread unlocked." << std::endl;
+    auto status = system(command.c_str());
+    return status;
 }
 
 EMailNotifier::EMailSendStatus EMailNotifier::check()
 {
-    mLock.lock();
     EMailSendStatus status = EMailSendStatus::None;
-    if (mDone && mAlertThread)
-    {
-        if (mAlertThread->joinable())
-        {
-            std::cerr << "EMailNotifier::Thread finished -> join" << std::endl;
-            mAlertThread->join();
-            mAlertThread.reset(nullptr);
-        }
 
-        if (isAlertSuccess())
-        {
-            status = EMailSendStatus::Success;
-        }
-        else
-        {
-            status = EMailSendStatus::Error;
-        }
-    }
-    else if (!mDone && mAlertThread)
-    {
-        status = EMailSendStatus::InProgress;
-    }
-    mLock.unlock();
     return status;
 }
 
