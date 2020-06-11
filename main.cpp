@@ -192,7 +192,7 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
 
     // parse command line arguments
     ArgumentParser parser;
-    parser.registerArgument(ARG_URL, "rtsp://user:password@localhost:554/stream");
+    parser.registerArgument(ARG_URL, "");
     parser.registerArgument(ARG_EMAIL, "my@address.com");
     parser.registerArgument(ARG_STORAGE, ".");
     parser.registerArgument(ARG_SCRIPTS, ".");
@@ -323,7 +323,7 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
             fps = static_cast<float>(frames) / milliseconds.count() * 1000.0;
             fpsTimer = currentTime;
             frames = 0;
-            std::cout << "FPS: " << fps << std::endl;
+            //std::cout << "FPS: " << fps << std::endl;
         }
         ++frames;
 
