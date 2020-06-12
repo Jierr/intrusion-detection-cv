@@ -33,21 +33,20 @@ public:
         std::atomic<int> sendStatus;
         std::atomic<ThreadId> priority;
         std::string command;
-        EMailNotifier* notifier;
+        EMailNotifier *notifier;
         std::mutex mutex;
 
         ThreadContext();
-        ThreadContext(EMailNotifier *emailNotifier, const ThreadId& priority);
-        ThreadContext(const ThreadContext& other) = delete;
+        ThreadContext(EMailNotifier *emailNotifier, const ThreadId &priority);
+        ThreadContext(const ThreadContext &other) = delete;
         ThreadContext(ThreadContext &&other) = delete;
-        ThreadContext& operator=(const ThreadContext& other) = delete;
+        ThreadContext& operator=(const ThreadContext &other) = delete;
         virtual ~ThreadContext() = default;
         void signalReady();
         void signalDone();
         bool isDone() const;
         void waitUntilReady() const;
     };
-
 
     EMailNotifier(const std::string &from, const std::string &to, const std::string &sendScriptLocation);
     virtual ~EMailNotifier();
@@ -66,9 +65,9 @@ private:
     ThreadId mThreadPriority;
     std::map<ThreadId, std::shared_ptr<ThreadContext> > mContexts;
 
-    bool isAlertSuccess(const ThreadId& threadPriority);
+    bool isAlertSuccess(const ThreadId &threadPriority);
 
-    bool startThread(const std::string& command);
+    bool startThread(const std::string &command);
     void cancelThread(pthread_t thread);
     void stopThreadWithLowestPriority();
     void cleanupThreads();

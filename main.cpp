@@ -84,8 +84,9 @@ class IntrusionDetectionDaemon: public Daemon
 {
 public:
     explicit IntrusionDetectionDaemon(const std::string &name);
-    ~IntrusionDetectionDaemon() = default;
+    ~IntrusionDetectionDaemon();
     int run(int argc, char **argv) override;
+    void tearDown();
 
     static std::shared_ptr<IntrusionDetectionDaemon> getInstance(const std::string &name);
 
@@ -95,6 +96,9 @@ private:
     static std::mutex mLock;
     static std::shared_ptr<IntrusionDetectionDaemon> mDaemon;
     static std::atomic<bool> mRunning;
+
+    ArgumentParser mParser;
+    cv::VideoCapture mCapture;
 };
 
 int main(int argc, char **argv)
@@ -166,6 +170,16 @@ IntrusionDetectionDaemon::IntrusionDetectionDaemon(const std::string &name)
         Daemon(name)
 {
     mRunning = true;
+    mParser.registerArgument(ARG_URL, "");
+    mParser.registerArgument(ARG_EMAIL, "my@address.com");
+    mParser.registerArgument(ARG_STORAGE, ".");
+    mParser.registerArgument(ARG_SCRIPTS, ".");
+    mParser.registerArgument(ARG_VISUAL, "False");
+}
+
+IntrusionDetectionDaemon::~IntrusionDetectionDaemon()
+{
+    tearDown();
 }
 
 std::shared_ptr<IntrusionDetectionDaemon> IntrusionDetectionDaemon::getInstance(const std::string &name)
@@ -180,6 +194,14 @@ std::shared_ptr<IntrusionDetectionDaemon> IntrusionDetectionDaemon::getInstance(
     return mDaemon;
 }
 
+void IntrusionDetectionDaemon::tearDown()
+{
+    if (mCapture.isOpened())
+    {
+        mCapture.release();
+    }
+}
+
 int IntrusionDetectionDaemon::run(int argc, char **argv)
 {
     std::string url;
@@ -189,19 +211,14 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
     bool visual = false;
 
     // parse command line arguments
-    ArgumentParser parser;
-    parser.registerArgument(ARG_URL, "");
-    parser.registerArgument(ARG_EMAIL, "my@address.com");
-    parser.registerArgument(ARG_STORAGE, ".");
-    parser.registerArgument(ARG_SCRIPTS, ".");
-    parser.registerArgument(ARG_VISUAL, "False");
-    parser.parse(argc, argv);
 
-    auto argUrl = parser[ARG_URL];
-    auto argEmail = parser[ARG_EMAIL];
-    auto argStorage = parser[ARG_STORAGE];
-    auto argScripts = parser[ARG_SCRIPTS];
-    auto argVisual = parser[ARG_VISUAL];
+    mParser.parse(argc, argv);
+
+    auto argUrl = mParser[ARG_URL];
+    auto argEmail = mParser[ARG_EMAIL];
+    auto argStorage = mParser[ARG_STORAGE];
+    auto argScripts = mParser[ARG_SCRIPTS];
+    auto argVisual = mParser[ARG_VISUAL];
 
     if (argUrl.exists)
         url = argUrl.value;
@@ -219,18 +236,17 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
     std::cout << ARG_STORAGE << " = " << storage << std::endl;
     std::cout << ARG_SCRIPTS << " = " << scripts << std::endl;
 
-    cv::VideoCapture capture;
     if (url.empty())
     {
         // Use default (Webcam)
-        capture.open(0);
+        mCapture.open(0);
     }
     else
     {
-        capture.open(url);
+        mCapture.open(url);
     }
 
-    if (!capture.isOpened())
+    if (!mCapture.isOpened())
     {
         std::cerr << "Cannot open \"" << url << "\"" << std::endl;
         return -1;
@@ -268,11 +284,11 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
     unsigned int captureErrors { 0 };
     unsigned int frames { 0 };
     float fps = 0.0f;
-    while (mRunning && (captureErrors < CAPTURE_ERROR_REINITIALIZE) && capture.isOpened())
+    while (mRunning && (captureErrors < CAPTURE_ERROR_REINITIALIZE) && mCapture.isOpened())
     {
         try
         {
-            if (!capture.read(frame))
+            if (!mCapture.read(frame))
             {
                 std::cerr << "Could not read frame..." << std::endl;
                 ++captureErrors;
@@ -381,7 +397,6 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
     }
 
     // Cleanup
-    capture.release();
     if (visual)
     {
         cv::destroyAllWindows();
