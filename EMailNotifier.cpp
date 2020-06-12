@@ -62,15 +62,15 @@ bool EMailNotifier::ThreadContext::isDone() const
 void* arbiter(void *arg)
 {
     EMailNotifier::ThreadContext *context = reinterpret_cast<EMailNotifier::ThreadContext*>(arg);
-    std::cout << "arbiter -> Thread started." << std::endl;
+    //std::cout << "arbiter -> Thread started." << std::endl;
     if (context == nullptr)
     {
         return nullptr;
     }
 
     context->waitUntilReady();
-    std::cout << "arbiter ->" << context->thread << " Thread ready. Priority: " << context->priority
-            << ", Thread handle: " << context->thread << std::endl;
+    //std::cout << "arbiter ->" << context->thread << " Thread ready. Priority: " << context->priority
+    //        << ", Thread handle: " << context->thread << std::endl;
 
 
     pthread_testcancel();
@@ -135,7 +135,7 @@ void EMailNotifier::stopThreadWithLowestPriority()
 
     auto context = mContexts.begin();
     pthread_t thread = context->second->thread;
-    context->second->mutex.lock();
+    context->second->mutex.try_lock();
     if (!context->second->isDone())
     {
         std::cout << "stopThreadWithLowestPriority ->" << context->second->thread

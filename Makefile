@@ -1,5 +1,6 @@
 CPP:=g++
-CPPFLAGS:=-O3 -Wall
+CPPFLAGS:= -Wall
+CPPFLAGS_RELEASE:= -O3
 LFLAGS:=-lopencv_video -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_video -lopencv_imgcodecs -lopencv_videoio -pthread
 
 scriptsrc:=idcv-sendEmail.sh
@@ -10,9 +11,17 @@ obj:= $(patsubst %.cpp,obj/%.o,$(cppsrc))
 
 project:=bin/tapocam
 
-.PHONY: env clean all scripts install uninstall
+.PHONY: env clean all debug release scripts install uninstall
+
+
+extend_cflag: 
+	$(eval CPPFLAGS += $(CPPFLAGS_RELEASE))
 
 all: $(project)
+
+release: | extend_cflag $(project) 
+
+debug: $(project)
 
 env:
 	mkdir -p bin

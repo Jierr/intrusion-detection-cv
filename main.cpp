@@ -36,8 +36,6 @@ using namespace cv;
  * Use seperate Email service / Thread. Use lib ssmtp
  * Mark images as sent or pending. On service start check, if there are pending
  * images. Tryout seperate image acquisition thread for better framerate.
- * daemonize process (fork).
- * terminate on ctrĺ + c.
  * Log into file
  */
 
