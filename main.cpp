@@ -193,15 +193,17 @@ void IntrusionDetectionDaemon::frameGrabber(const std::string url)
             mFramebufferIndex = last;
             mFrameGrabberLock.unlock();
             ++errors;
+            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         else
         {
             mHasNewFrame = true;
             mFrameGrabberLock.unlock();
-            std::this_thread::yield();
             errors = 0;
+            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        usleep(1000);
     }
 
     if (camera.isOpened())
@@ -396,7 +398,6 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
 
         if (!getRecentFrame(frame))
             continue;
-        std::this_thread::yield();
         // Create Background from noise reduced image
         cv::blur(frame, frameSmoothed, cv::Size(3, 3));
         // Remove light sensitive reactions
