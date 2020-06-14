@@ -61,7 +61,7 @@ constexpr char ARG_VISUAL[] = "--visual";
 constexpr char ARG_SCRIPTS[] = "--scripts";
 
 constexpr unsigned int ISO_TIME_BUFFER_SIZE { 255 };
-constexpr unsigned int CAPTURE_ERROR_REINITIALIZE { 100 };
+constexpr unsigned int CAPTURE_ERROR_REINITIALIZE { 10000 };
 
 }  // namespace
 
@@ -290,9 +290,12 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
         {
             if (!mCapture.read(frame))
             {
-                std::cerr << "Could not read frame..." << std::endl;
                 ++captureErrors;
                 continue;
+            }
+            else
+            {
+                captureErrors = 0;
             }
         } catch (std::runtime_error &ex)
         {
@@ -396,11 +399,17 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
         }
     }
 
+    if(captureErrors >= CAPTURE_ERROR_REINITIALIZE)
+    {
+        std::cerr << "Terminated because of too many frame read errors." << std::endl;
+    }
+
     // Cleanup
     if (visual)
     {
         cv::destroyAllWindows();
     }
+
     return 0;
 }
 

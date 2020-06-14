@@ -154,6 +154,7 @@ void EMailNotifier::stopThreadWithLowestPriority()
 
 void EMailNotifier::cleanupThreads()
 {
+    std::list<ThreadId> keys;
     for (const auto &context : mContexts)
     {
         if (context.second->isDone())
@@ -162,10 +163,15 @@ void EMailNotifier::cleanupThreads()
             ThreadId key = context.second->priority;
             std::cout << "pthread_join thread with key " << key << std::endl;
             pthread_join(thread, NULL);
-            std::cout << "pthread_join complete, erase thread context for key " << key << std::endl;
-            mContexts.erase(key);
-            std::cout << "erase complete " << std::endl;
+            std::cout << "pthread_join complete" << std::endl;
+            keys.push_back(key);
         }
+    }
+
+    for (const auto &key : keys)
+    {
+        mContexts.erase(key);
+        std::cout << key << ": Key erase complete " << std::endl;
     }
 }
 
