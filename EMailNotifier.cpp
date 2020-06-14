@@ -17,14 +17,13 @@ namespace
 constexpr char SEND_SCRIPT[] = "idcv-sendEmail.sh";
 constexpr int MAXIMUM_RUNNING_THREADS { 2 };
 constexpr unsigned int EXEC_TIMEOUT_SECONDS { 90 };
-const std::string TIMEOUT_COMMAND{"timeout --signal=KILL "};
+const std::string TIMEOUT_COMMAND { "timeout --signal=KILL " };
 
-std::string getTimeoutCommand(const unsigned int& seconds)
+std::string getTimeoutCommand(const unsigned int &seconds)
 {
     return TIMEOUT_COMMAND + std::to_string(EXEC_TIMEOUT_SECONDS) + " ";
 }
 }
-
 
 EMailNotifier::ThreadContext::ThreadContext(EMailNotifier *emailNotifier, const ThreadId &prio)
         :
@@ -72,15 +71,14 @@ void* arbiter(void *arg)
     //std::cout << "arbiter ->" << context->thread << " Thread ready. Priority: " << context->priority
     //        << ", Thread handle: " << context->thread << std::endl;
 
-
     pthread_testcancel();
     if (!context->command.empty())
     {
-        int status = context->notifier->run(
-                getTimeoutCommand(EXEC_TIMEOUT_SECONDS) + context->command);
+        int status = context->notifier->run(getTimeoutCommand(EXEC_TIMEOUT_SECONDS) + context->command);
         context->sendStatus = status;
     }
 
+    pthread_testcancel();
     context->signalDone();
     return nullptr;
 }
@@ -135,21 +133,23 @@ void EMailNotifier::stopThreadWithLowestPriority()
 
     auto context = mContexts.begin();
     pthread_t thread = context->second->thread;
-    context->second->mutex.try_lock();
+    bool here = context->second->mutex.try_lock();
     if (!context->second->isDone())
     {
         std::cout << "stopThreadWithLowestPriority ->" << context->second->thread
                 << " Thread still running, cancel Thread." << std::endl;
         ThreadId key = context->second->priority;
         cancelThread(thread);
-        context->second->mutex.unlock();
+        if (here)
+            context->second->mutex.unlock();
         mContexts.erase(key);
     }
     else
     {
         std::cout << "stopThreadWithLowestPriority ->" << context->second->thread
                 << " Thread already finished, just cleanup." << std::endl;
-        context->second->mutex.unlock();
+        if (here)
+            context->second->mutex.unlock();
         cleanupThreads();
     }
 }
