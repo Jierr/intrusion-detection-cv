@@ -46,11 +46,11 @@ void EMailNotifier::ThreadContext::signalDone()
 
 void EMailNotifier::ThreadContext::waitUntilReady() const
 {
-    while (!ready)
+    do
     {
         sleep(1);
         pthread_yield();
-    }
+    } while (!ready);
 }
 
 bool EMailNotifier::ThreadContext::isDone() const
