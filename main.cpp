@@ -39,16 +39,16 @@ using namespace cv;
  * Use high quality image for Email
  * Use seperate Email service / Thread. Use lib ssmtp
  * Mark images as sent or pending. On service start check, if there are pending
- * images. Tryout seperate image acquisition thread for better framerate.
+ * images.
  * Log into file
+ * Add Framerate control
  */
 
 namespace
 {
 constexpr char DAEMON_NAME[] = "intrusion-detection";
 
-constexpr int FPS { 14 };
-constexpr int MS_PER_FRAME { 1000 / FPS };
+constexpr int FPS { 10 };
 constexpr int VK_ESCAPE { 27 };
 constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(90);
 constexpr double TRIGGER_SATURATION { 0.020 };
@@ -98,7 +98,6 @@ public:
     void startFrameGrabber(const std::string &url);
     void stopFrameGrabber();
     bool hasFrameGrabberTerminated();
-
     bool getRecentFrame(cv::Mat &frame);
 
 private:
@@ -138,109 +137,6 @@ IntrusionDetectionDaemon::IntrusionDetectionDaemon(const std::string &name)
 IntrusionDetectionDaemon::~IntrusionDetectionDaemon()
 {
     tearDown();
-}
-
-void IntrusionDetectionDaemon::startFrameGrabber(const std::string &url)
-{
-    stopFrameGrabber();
-    if (mFrameGrabberThread == nullptr)
-    {
-        mFrameGrabberTerminated = false;
-        mRunningFrameGrabber = true;
-        mFrameGrabberThread.reset(new std::thread(&IntrusionDetectionDaemon::frameGrabber, this, url));
-    }
-}
-
-void IntrusionDetectionDaemon::stopFrameGrabber()
-{
-    if (mFrameGrabberThread != nullptr)
-    {
-        mRunningFrameGrabber = false;
-        if (mFrameGrabberThread->joinable())
-            mFrameGrabberThread->join();
-        mFrameGrabberThread.reset(nullptr);
-    }
-}
-
-void IntrusionDetectionDaemon::frameGrabber(const std::string url)
-{
-    cv::VideoCapture camera;
-    unsigned int errors = 0;
-
-    if (url.empty())
-    {
-        // Use default (Webcam)
-        camera.open(0);
-    }
-    else
-    {
-        camera.open(url);
-    }
-
-    if (!camera.isOpened())
-    {
-        mRunningFrameGrabber = false;
-        return;
-    }
-
-    while (mRunningFrameGrabber && camera.isOpened() && (errors < CAPTURE_ERROR_REINITIALIZE))
-    {
-        mFrameGrabberLock.lock();
-        int last = mFramebufferIndex;
-        mFramebufferIndex = (mFramebufferIndex + 1) % 2;
-        if (!camera.read(mFramebuffer[mFramebufferIndex]))
-        {
-            mFramebufferIndex = last;
-            mFrameGrabberLock.unlock();
-            ++errors;
-            std::this_thread::yield();
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        else
-        {
-            mHasNewFrame = true;
-            mFrameGrabberLock.unlock();
-            errors = 0;
-            std::this_thread::yield();
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    }
-
-    if (camera.isOpened())
-    {
-        camera.release();
-    }
-
-    mFrameGrabberTerminated = true;
-}
-
-bool IntrusionDetectionDaemon::hasFrameGrabberTerminated()
-{
-    if (mFrameGrabberThread == nullptr)
-    {
-        return true;
-    }
-    return mFrameGrabberTerminated;
-}
-
-bool IntrusionDetectionDaemon::getRecentFrame(cv::Mat &frame)
-{
-    if (mFrameGrabberThread == nullptr)
-    {
-        return false;
-    }
-
-    mFrameGrabberLock.lock();
-    if (mHasNewFrame)
-    {
-        frame = mFramebuffer[mFramebufferIndex];
-        mHasNewFrame = false;
-        mFrameGrabberLock.unlock();
-        return true;
-    }
-    mFrameGrabberLock.unlock();
-    return false;
-
 }
 
 int main(int argc, char **argv)
@@ -498,6 +394,109 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
     }
 
     return 0;
+}
+
+
+void IntrusionDetectionDaemon::startFrameGrabber(const std::string &url)
+{
+    stopFrameGrabber();
+    if (mFrameGrabberThread == nullptr)
+    {
+        mFrameGrabberTerminated = false;
+        mRunningFrameGrabber = true;
+        mFrameGrabberThread.reset(new std::thread(&IntrusionDetectionDaemon::frameGrabber, this, url));
+    }
+}
+
+void IntrusionDetectionDaemon::stopFrameGrabber()
+{
+    if (mFrameGrabberThread != nullptr)
+    {
+        mRunningFrameGrabber = false;
+        if (mFrameGrabberThread->joinable())
+            mFrameGrabberThread->join();
+        mFrameGrabberThread.reset(nullptr);
+    }
+}
+
+void IntrusionDetectionDaemon::frameGrabber(const std::string url)
+{
+    cv::VideoCapture camera;
+    unsigned int errors = 0;
+
+    if (url.empty())
+    {
+        // Use default (Webcam)
+        camera.open(0);
+    }
+    else
+    {
+        camera.open(url);
+    }
+
+    if (!camera.isOpened())
+    {
+        mRunningFrameGrabber = false;
+        return;
+    }
+
+    while (mRunningFrameGrabber && camera.isOpened() && (errors < CAPTURE_ERROR_REINITIALIZE))
+    {
+        mFrameGrabberLock.lock();
+        int last = mFramebufferIndex;
+        mFramebufferIndex = (mFramebufferIndex + 1) % 2;
+        if (!camera.read(mFramebuffer[mFramebufferIndex]))
+        {
+            mFramebufferIndex = last;
+            mFrameGrabberLock.unlock();
+            ++errors;
+            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        else
+        {
+            mHasNewFrame = true;
+            mFrameGrabberLock.unlock();
+            errors = 0;
+            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+
+    if (camera.isOpened())
+    {
+        camera.release();
+    }
+
+    mFrameGrabberTerminated = true;
+}
+
+bool IntrusionDetectionDaemon::hasFrameGrabberTerminated()
+{
+    if (mFrameGrabberThread == nullptr)
+    {
+        return true;
+    }
+    return mFrameGrabberTerminated;
+}
+
+bool IntrusionDetectionDaemon::getRecentFrame(cv::Mat &frame)
+{
+    if (mFrameGrabberThread == nullptr)
+    {
+        return false;
+    }
+
+    mFrameGrabberLock.lock();
+    if (mHasNewFrame)
+    {
+        frame = mFramebuffer[mFramebufferIndex];
+        mHasNewFrame = false;
+        mFrameGrabberLock.unlock();
+        return true;
+    }
+    mFrameGrabberLock.unlock();
+    return false;
 }
 
 std::list<std::string> persistImages(Persistence &persistence, std::list<cv::Mat*> images,
