@@ -14,6 +14,10 @@
 #include <atomic>
 #include <mutex>
 
+//Frame Grabber
+#include <thread>
+#include <unistd.h>
+
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -35,16 +39,16 @@ using namespace cv;
  * Use high quality image for Email
  * Use seperate Email service / Thread. Use lib ssmtp
  * Mark images as sent or pending. On service start check, if there are pending
- * images. Tryout seperate image acquisition thread for better framerate.
+ * images.
  * Log into file
+ * Add Framerate control
  */
 
 namespace
 {
 constexpr char DAEMON_NAME[] = "intrusion-detection";
 
-constexpr int FPS { 14 };
-constexpr int MS_PER_FRAME { 1000 / FPS };
+constexpr int FPS { 10 };
 constexpr int VK_ESCAPE { 27 };
 constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(90);
 constexpr double TRIGGER_SATURATION { 0.020 };
@@ -90,6 +94,12 @@ public:
 
     static std::shared_ptr<IntrusionDetectionDaemon> getInstance(const std::string &name);
 
+    void frameGrabber(const std::string url);
+    void startFrameGrabber(const std::string &url);
+    void stopFrameGrabber();
+    bool hasFrameGrabberTerminated();
+    bool getRecentFrame(cv::Mat &frame);
+
 private:
     __sighandler_t getSignalHandler() override;
     static void signalHandler(int number);
@@ -98,8 +108,36 @@ private:
     static std::atomic<bool> mRunning;
 
     ArgumentParser mParser;
-    cv::VideoCapture mCapture;
+
+    std::unique_ptr<std::thread> mFrameGrabberThread;
+    std::atomic<bool> mRunningFrameGrabber;
+    std::atomic<bool> mFrameGrabberTerminated;
+    std::atomic<bool> mHasNewFrame;
+    std::mutex mFrameGrabberLock;
+    std::array<cv::Mat, 2> mFramebuffer;
+    std::atomic<int> mFramebufferIndex;
 };
+
+IntrusionDetectionDaemon::IntrusionDetectionDaemon(const std::string &name)
+        :
+        Daemon(name),
+        mRunningFrameGrabber(false),
+        mFrameGrabberTerminated(true),
+        mHasNewFrame(false),
+        mFramebufferIndex(0)
+{
+    mRunning = true;
+    mParser.registerArgument(ARG_URL, "");
+    mParser.registerArgument(ARG_EMAIL, "my@address.com");
+    mParser.registerArgument(ARG_STORAGE, ".");
+    mParser.registerArgument(ARG_SCRIPTS, ".");
+    mParser.registerArgument(ARG_VISUAL, "False");
+}
+
+IntrusionDetectionDaemon::~IntrusionDetectionDaemon()
+{
+    tearDown();
+}
 
 int main(int argc, char **argv)
 {
@@ -165,23 +203,6 @@ void IntrusionDetectionDaemon::signalHandler(int sig)
     }
 }
 
-IntrusionDetectionDaemon::IntrusionDetectionDaemon(const std::string &name)
-        :
-        Daemon(name)
-{
-    mRunning = true;
-    mParser.registerArgument(ARG_URL, "");
-    mParser.registerArgument(ARG_EMAIL, "my@address.com");
-    mParser.registerArgument(ARG_STORAGE, ".");
-    mParser.registerArgument(ARG_SCRIPTS, ".");
-    mParser.registerArgument(ARG_VISUAL, "False");
-}
-
-IntrusionDetectionDaemon::~IntrusionDetectionDaemon()
-{
-    tearDown();
-}
-
 std::shared_ptr<IntrusionDetectionDaemon> IntrusionDetectionDaemon::getInstance(const std::string &name)
 {
     mLock.lock();
@@ -196,10 +217,7 @@ std::shared_ptr<IntrusionDetectionDaemon> IntrusionDetectionDaemon::getInstance(
 
 void IntrusionDetectionDaemon::tearDown()
 {
-    if (mCapture.isOpened())
-    {
-        mCapture.release();
-    }
+    stopFrameGrabber();
 }
 
 int IntrusionDetectionDaemon::run(int argc, char **argv)
@@ -236,23 +254,6 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
     std::cout << ARG_STORAGE << " = " << storage << std::endl;
     std::cout << ARG_SCRIPTS << " = " << scripts << std::endl;
 
-    if (url.empty())
-    {
-        // Use default (Webcam)
-        mCapture.open(0);
-    }
-    else
-    {
-        mCapture.open(url);
-    }
-
-    if (!mCapture.isOpened())
-    {
-        std::cerr << "Cannot open \"" << url << "\"" << std::endl;
-        return -1;
-    }
-    std::cerr << "Opened \"" << url << "\"" << std::endl;
-
     if (visual)
     {
         cv::namedWindow("Surveillance", cv::WINDOW_AUTOSIZE);
@@ -281,29 +282,18 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
     IntrusionTrigger majorIntrusionTrigger(MAJOR_TRIGGER_ON_CONSECUTIVE_FRAME, TRIGGER_SATURATION);
     char isoTime[ISO_TIME_BUFFER_SIZE] = { 0 };
     cv::Mat frame, frameSmoothed, foregroundMask, foregroundMaskSmoothed;
-    unsigned int captureErrors { 0 };
     unsigned int frames { 0 };
     float fps = 0.0f;
-    while (mRunning && (captureErrors < CAPTURE_ERROR_REINITIALIZE) && mCapture.isOpened())
+    while (mRunning)
     {
-        try
+        if (hasFrameGrabberTerminated())
         {
-            if (!mCapture.read(frame))
-            {
-                ++captureErrors;
-                continue;
-            }
-            else
-            {
-                captureErrors = 0;
-            }
-        } catch (std::runtime_error &ex)
-        {
-            std::cerr << "Exception acquiring next frame: " << ex.what() << std::endl;
-            ++captureErrors;
-            continue;
+            std::cerr << "Frame Grabber is not running, restarting..." << std::endl;
+            startFrameGrabber(url);
         }
 
+        if (!getRecentFrame(frame))
+            continue;
         // Create Background from noise reduced image
         cv::blur(frame, frameSmoothed, cv::Size(3, 3));
         // Remove light sensitive reactions
@@ -340,7 +330,7 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
             fps = static_cast<float>(frames) / milliseconds.count() * 1000.0;
             fpsTimer = currentTime;
             frames = 0;
-            //std::cout << "FPS: " << fps << std::endl;
+            std::cout << "FPS: " << fps << std::endl;
         }
         ++frames;
 
@@ -351,7 +341,6 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
             // Reset timer for next trigger condition
             majorTrigger = std::chrono::system_clock::now();
             std::time_t cTrigger = std::chrono::system_clock::to_time_t(majorTrigger);
-            std::cout << "Possible Intrusion: " << std::ctime(&cTrigger) << std::endl;
 
             // Save triggering images fullfilling saturation condition.
             std::list<cv::Mat*> imageList { &frame, &foregroundMask };
@@ -365,7 +354,6 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
             // Reset timer for next trigger condition
             minorTrigger = std::chrono::system_clock::now();
             std::time_t cTrigger = std::chrono::system_clock::to_time_t(minorTrigger);
-            std::cout << "Possible Intrusion: " << std::ctime(&cTrigger) << std::endl;
 
             // Save triggering images fullfilling saturation condition.
             std::list<cv::Mat*> imageList { &frame, &foregroundMask };
@@ -399,11 +387,6 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
         }
     }
 
-    if(captureErrors >= CAPTURE_ERROR_REINITIALIZE)
-    {
-        std::cerr << "Terminated because of too many frame read errors." << std::endl;
-    }
-
     // Cleanup
     if (visual)
     {
@@ -411,6 +394,109 @@ int IntrusionDetectionDaemon::run(int argc, char **argv)
     }
 
     return 0;
+}
+
+
+void IntrusionDetectionDaemon::startFrameGrabber(const std::string &url)
+{
+    stopFrameGrabber();
+    if (mFrameGrabberThread == nullptr)
+    {
+        mFrameGrabberTerminated = false;
+        mRunningFrameGrabber = true;
+        mFrameGrabberThread.reset(new std::thread(&IntrusionDetectionDaemon::frameGrabber, this, url));
+    }
+}
+
+void IntrusionDetectionDaemon::stopFrameGrabber()
+{
+    if (mFrameGrabberThread != nullptr)
+    {
+        mRunningFrameGrabber = false;
+        if (mFrameGrabberThread->joinable())
+            mFrameGrabberThread->join();
+        mFrameGrabberThread.reset(nullptr);
+    }
+}
+
+void IntrusionDetectionDaemon::frameGrabber(const std::string url)
+{
+    cv::VideoCapture camera;
+    unsigned int errors = 0;
+
+    if (url.empty())
+    {
+        // Use default (Webcam)
+        camera.open(0);
+    }
+    else
+    {
+        camera.open(url);
+    }
+
+    if (!camera.isOpened())
+    {
+        mRunningFrameGrabber = false;
+        return;
+    }
+
+    while (mRunningFrameGrabber && camera.isOpened() && (errors < CAPTURE_ERROR_REINITIALIZE))
+    {
+        mFrameGrabberLock.lock();
+        int last = mFramebufferIndex;
+        mFramebufferIndex = (mFramebufferIndex + 1) % 2;
+        if (!camera.read(mFramebuffer[mFramebufferIndex]))
+        {
+            mFramebufferIndex = last;
+            mFrameGrabberLock.unlock();
+            ++errors;
+            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        else
+        {
+            mHasNewFrame = true;
+            mFrameGrabberLock.unlock();
+            errors = 0;
+            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+
+    if (camera.isOpened())
+    {
+        camera.release();
+    }
+
+    mFrameGrabberTerminated = true;
+}
+
+bool IntrusionDetectionDaemon::hasFrameGrabberTerminated()
+{
+    if (mFrameGrabberThread == nullptr)
+    {
+        return true;
+    }
+    return mFrameGrabberTerminated;
+}
+
+bool IntrusionDetectionDaemon::getRecentFrame(cv::Mat &frame)
+{
+    if (mFrameGrabberThread == nullptr)
+    {
+        return false;
+    }
+
+    mFrameGrabberLock.lock();
+    if (mHasNewFrame)
+    {
+        frame = mFramebuffer[mFramebufferIndex];
+        mHasNewFrame = false;
+        mFrameGrabberLock.unlock();
+        return true;
+    }
+    mFrameGrabberLock.unlock();
+    return false;
 }
 
 std::list<std::string> persistImages(Persistence &persistence, std::list<cv::Mat*> images,
