@@ -1,6 +1,7 @@
 #!/bin/bash
 # Source for this script https://backreference.org/2013/05/22/send-email-with-attachments-from-script-or-command-line/
 # This requires the package ssmtp to be installed and configured. (man ssmtp)
+RC=0
 
 from="$1"
 to="$2"
@@ -54,3 +55,6 @@ done
 printf '%s\n' "--${boundary}--"
  
 } | sendmail -t -oi   # one may also use -f here to set the envelope-from
+
+RC=$?
+exit $RC

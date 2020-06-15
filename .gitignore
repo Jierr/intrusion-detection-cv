@@ -3,3 +3,5 @@
 .settings/
 bin/
 obj/
+run.sh
+*.jpg
