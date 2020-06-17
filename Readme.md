@@ -18,13 +18,13 @@ sudo make install
 * Monitor the rtsp stream of your chinesium grade camera for movements.
 
 * Send EMails to yourself via *ssmtp*.
-.* EMails include pictures of the static scene in which movement was detected.
-.* EMails with HIGH or LOW alert level are sent. (It avoids spamming your mailbox)
-..* HIGH: Movement was detected for a reliable amount of time
-..* LOW: Movement or maybe noise was detected for a shorter amount of time
+    * EMails include pictures of the static scene in which movement was detected.
+    * EMails with HIGH or LOW alert level are sent. (It avoids spamming your mailbox)
+        * HIGH: Movement was detected for a reliable amount of time
+        * LOW: Movement or maybe noise was detected for a shorter amount of time
 
 * Start as service (fork)
-.* systemd and init.d files are supplied - Service will respawn when killed.
+    * systemd and init.d files are supplied - Service will respawn when killed.
 
 * Save surveillance images of interest in your persistence.
 
