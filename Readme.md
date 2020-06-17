@@ -42,11 +42,8 @@ sudo make install
 * `--storage <path>` Path to store images, triggered on movement and sent by mail
 * `-visual <true|false>` True: Visualize camera stream and processed foreground image (Debugging)
 * `--scripts <directory>` directory to the installed sendmail script. 
+
 ## Example
 
-![Static Scene](https://github.com/Jierr/intrusion-detection-cv/tree/master/doc/scene.jpg)
-![Foreground](https://github.com/Jierr/intrusion-detection-cv/tree/master/doc/foreground.jpg)
-
-###Sample EMail
-
-
+* ![Static Scene](https://raw.githubusercontent.com/Jierr/intrusion-detection-cv/master/doc/scene.jpg)
+* ![Foreground](https://raw.githubusercontent.com/Jierr/intrusion-detection-cv/master/doc/foreground.jpg)
