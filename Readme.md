@@ -1,4 +1,4 @@
-# Intrusion detetection with opencv
+# Intrusion detection with opencv
 
 This project offers a lightweight intrusion detection usable on devices like the raspberry pi with one of your
 home ip cameras.
