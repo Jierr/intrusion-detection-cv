@@ -52,9 +52,9 @@ constexpr char DAEMON_NAME[] = "intrusion-detection";
 constexpr int FPS { 10 };
 constexpr int VK_ESCAPE { 27 };
 constexpr auto TRIGGER_DELAY_SECONDS = std::chrono::seconds(90);
-constexpr double TRIGGER_SATURATION { 0.020 };
-constexpr unsigned int MINOR_TRIGGER_ON_CONSECUTIVE_FRAME { FPS * 3 };
-constexpr unsigned int MAJOR_TRIGGER_ON_CONSECUTIVE_FRAME { FPS * 10 };
+constexpr double TRIGGER_SATURATION { 0.030 };
+constexpr unsigned int MINOR_TRIGGER_ON_CONSECUTIVE_FRAME { FPS * 15 };
+constexpr unsigned int MAJOR_TRIGGER_ON_CONSECUTIVE_FRAME { FPS * 20 };
 
 constexpr char ARG_FOREGROUND[] = "--foreground";
 constexpr char ARG_RUNDIR[] = "--run-dir";
