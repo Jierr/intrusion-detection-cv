@@ -11,7 +11,7 @@
 
 NAME=intrusion-detection
 DAEMON=/usr/local/bin/tapocam
-OPTIONS="--foreground false --run-dir /tmp/${NAME}/ --url rtsp://user:password@localhost:554/stream --email <your-email> --storage <image-storage-path> --scripts /usr/local/bin"
+-OPTIONS="--foreground false --run-dir /tmp/${NAME}/ --url rtsp://user:password@localhost:554/stream --email <your-email> --storage <image-storage-path> --scripts /usr/local/bin"
 
 test -x $DAEMON || exit 0
 
